@@ -1,0 +1,206 @@
+---
+- name: Configure shell as default
+  user:
+    name: "{{ ansible_user_id }}"
+    shell: /bin/bash
+  become: true
+  tags:
+    - system
+    - shell
+
+- name: Create local bin directory
+  file:
+    path: "{{ ansible_user_dir }}/.local/bin"
+    state: directory
+    mode: "0755"
+  tags:
+    - system
+    - setup
+
+- name: Enable SSH key forwarding for Ansible user
+  authorized_key:
+    user: "{{ ansible_user_id }}"
+    state: present
+    key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    exclusive: false
+  tags:
+    - system
+    - ssh
+
+- name: Configure sudo for Ansible user via sudoers.d
+  copy:
+    dest: "/etc/sudoers.d/{{ ansible_user_id }}"
+    mode: "0440"
+    content: "{{ ansible_user_id }} ALL=(ALL) NOPASSWD: ALL\n"
+    validate: "visudo -cf %s"
+  become: true
+  tags:
+    - system
+    - sudo
+
+- name: Set hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+    use: systemd
+  become: true
+  when: inventory_hostname != ansible_hostname
+  tags:
+    - system
+    - hostname
+
+- name: Set timezone to UTC
+  timezone:
+    name: UTC
+  become: true
+  tags:
+    - system
+    - timezone
+
+- name: Ensure tailscaled is enabled and running
+  systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+  become: true
+  tags:
+    - system
+    - tailscale
+
+- name: Disable parity timer on controller when parity automation is not enabled
+  systemd:
+    name: ansible-parity-sync.timer
+    enabled: false
+    state: stopped
+  become: true
+  failed_when: false
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - not (ansible_parity_controller_enabled | default(false) | bool)
+  tags:
+    - system
+    - parity
+
+- name: Remove parity service unit when parity automation is not enabled
+  file:
+    path: /etc/systemd/system/ansible-parity-sync.service
+    state: absent
+  become: true
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - not (ansible_parity_controller_enabled | default(false) | bool)
+  tags:
+    - system
+    - parity
+
+- name: Remove parity timer unit when parity automation is not enabled
+  file:
+    path: /etc/systemd/system/ansible-parity-sync.timer
+    state: absent
+  become: true
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - not (ansible_parity_controller_enabled | default(false) | bool)
+  tags:
+    - system
+    - parity
+
+- name: Reload systemd when parity units are removed
+  systemd:
+    daemon_reload: true
+  become: true
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - not (ansible_parity_controller_enabled | default(false) | bool)
+  tags:
+    - system
+    - parity
+
+- name: Check for local ansible repo on controller
+  stat:
+    path: /home/hdh/ansible/playbooks/site.yml
+  register: ansible_repo
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - ansible_parity_controller_enabled | default(false) | bool
+  tags:
+    - system
+    - parity
+
+- name: Install ansible parity sync service on controller
+  copy:
+    dest: /etc/systemd/system/ansible-parity-sync.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Ansible parity sync for Fedora machines
+      Wants=network-online.target tailscaled.service
+      After=network-online.target tailscaled.service
+
+      [Service]
+      Type=oneshot
+      User=hdh
+      WorkingDirectory=/home/hdh/ansible
+      Environment=HOME=/home/hdh
+      ExecStart=/usr/bin/ansible-playbook /home/hdh/ansible/playbooks/site.yml
+
+      [Install]
+      WantedBy=multi-user.target
+  become: true
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - ansible_parity_controller_enabled | default(false) | bool
+    - ansible_repo.stat.exists
+  tags:
+    - system
+    - parity
+
+- name: Install ansible parity sync timer on controller
+  copy:
+    dest: /etc/systemd/system/ansible-parity-sync.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Run ansible parity sync on boot and every 6 hours
+
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=6h
+      Persistent=true
+      Unit=ansible-parity-sync.service
+
+      [Install]
+      WantedBy=timers.target
+  become: true
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - ansible_parity_controller_enabled | default(false) | bool
+    - ansible_repo.stat.exists
+  tags:
+    - system
+    - parity
+
+- name: Reload systemd after installing parity units
+  systemd:
+    daemon_reload: true
+  become: true
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - ansible_parity_controller_enabled | default(false) | bool
+    - ansible_repo.stat.exists
+  tags:
+    - system
+    - parity
+
+- name: Enable ansible parity sync timer on controller
+  systemd:
+    name: ansible-parity-sync.timer
+    enabled: true
+    state: started
+  become: true
+  when:
+    - inventory_hostname == (ansible_parity_controller_host | default('coordinator'))
+    - ansible_parity_controller_enabled | default(false) | bool
+    - ansible_repo.stat.exists
+  tags:
+    - system
+    - parity

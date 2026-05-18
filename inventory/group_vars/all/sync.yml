@@ -1,0 +1,20 @@
+# Secure parity sync defaults for all managed Fedora machines
+sync_enabled: true
+sync_enable_secret_timers: true
+sync_require_full_recipient_mesh: true
+
+# Add extra recipients only if you need non-managed decrypt targets.
+sync_age_extra_recipients: []
+
+# Additional high-value app/config paths for legal-research portability.
+sync_secret_source_paths:
+  - "{{ sync_home }}/.config/mcp"
+  - "{{ sync_home }}/.config/openclaw"
+  - "{{ sync_home }}/.config/Code/User"
+  - "{{ sync_home }}/.local/share/models"
+  - "{{ sync_home }}/.ollama"
+  - "{{ sync_home }}/.local/share/parity-agent"
+  - "{{ sync_home }}/.config/aider"
+  - "{{ sync_home }}/.config/litellm"
+  - "{{ sync_home }}/.config"
+  - "{{ sync_home }}/.local/share"

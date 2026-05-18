@@ -1,0 +1,80 @@
+---
+- name: Update package cache
+  dnf:
+    update_cache: true
+    state: present
+  become: true
+  tags:
+    - packages
+
+- name: Install essential CLI tools
+  dnf:
+    name:
+      - curl
+      - wget
+      - git
+      - git-lfs
+      - htop
+      - tmux
+      - vim
+      - nano
+      - zip
+      - unzip
+      - tar
+      - gzip
+      - rsync
+      - tree
+      - jq
+      - yq
+      - bat
+      - ripgrep
+      - fd-find
+      - gnome-tweaks
+      - gnome-shell-extension-caffeine
+    state: present
+  become: true
+  tags:
+    - packages
+    - cli-tools
+
+- name: Install network utilities
+  dnf:
+    name:
+      - net-tools
+      - bind-utils
+      - traceroute
+      - whois
+      - mtr
+      - nmap
+    state: present
+  become: true
+  tags:
+    - packages
+    - network
+
+- name: Install system utilities
+  dnf:
+    name:
+      - systemd-devel
+      - dnf-utils
+      - lsof
+      - strace
+      - perf
+      - kernel-tools
+    state: present
+  become: true
+  tags:
+    - packages
+    - system
+
+- name: Install parity union packages discovered from all hosts
+  dnf:
+    name: "{{ parity_union_packages }}"
+    state: present
+  become: true
+  when:
+    - parity_union_packages is defined
+    - (parity_union_packages | length) > 0
+  tags:
+    - packages
+    - parity

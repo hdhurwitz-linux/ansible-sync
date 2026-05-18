@@ -1,0 +1,50 @@
+---
+sync_enabled: true
+sync_user: "{{ ansible_facts.user_id | default(ansible_user | default('hdh')) }}"
+sync_home: "{{ ansible_facts.user_dir | default('/home/' ~ sync_user) }}"
+
+# Native secure sync stack
+sync_install_packages:
+  - syncthing
+  - age
+  - restic
+  - rsync
+  - zstd
+
+# Syncthing staging roots (pair devices once; then these sync automatically)
+sync_root: "{{ sync_home }}/Sync/parity"
+sync_dirs:
+  - "{{ sync_root }}/configs"
+  - "{{ sync_root }}/models"
+  - "{{ sync_root }}/data"
+  - "{{ sync_root }}/secrets"
+
+# High-value paths for legal/AI workflows (encrypted vault bundle source)
+sync_secret_source_paths:
+  - "{{ sync_home }}/.config/mcp"
+  - "{{ sync_home }}/.config/openclaw"
+  - "{{ sync_home }}/.config/Code/User"
+  - "{{ sync_home }}/.config/OpenWebUI"
+  - "{{ sync_home }}/.config/litellm"
+  - "{{ sync_home }}/.config/aider"
+  - "{{ sync_home }}/.local/share/models"
+  - "{{ sync_home }}/.local/share/ollama"
+  - "{{ sync_home }}/.ollama"
+  - "{{ sync_home }}/.local/share/parity-agent"
+  - "{{ sync_home }}/.config/git"
+  - "{{ sync_home }}/.ssh/config"
+
+# Encrypted vault replication settings (age)
+sync_age_recipient: ""
+sync_age_identity_file: "{{ sync_home }}/.config/sops/age/keys.txt"
+sync_age_extra_recipients: []
+sync_require_full_recipient_mesh: true
+
+sync_state_dir: "{{ sync_home }}/.local/share/parity-sync"
+sync_secret_plain_archive: "{{ sync_state_dir }}/secret-vaults.tar.zst"
+sync_secret_encrypted_archive: "{{ sync_root }}/secrets/secret-vaults.tar.zst.age"
+
+sync_secret_pack_schedule: "*:0/5"
+sync_secret_unpack_schedule: "*:0/5"
+
+sync_enable_secret_timers: true

@@ -1,0 +1,18 @@
+[filter "lfs"]
+        clean = git-lfs clean -- %f
+        smudge = git-lfs smudge -- %f
+        process = git-lfs filter-process
+        required = true
+[init]
+        defaultBranch = main
+[pull]
+        rebase = false
+[fetch]
+        prune = true
+[core]
+        autocrlf = input
+[credential]
+        helper = cache
+[user]
+        name = {{ git_user_name | default('hdh') }}
+        email = {{ git_user_email | default('hdh@users.noreply.github.com') }}

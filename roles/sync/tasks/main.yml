@@ -1,0 +1,275 @@
+---
+- name: Install native secure sync tooling
+  dnf:
+    name: "{{ sync_install_packages }}"
+    state: present
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - packages
+
+- name: Ensure parity sync directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ sync_user }}"
+    group: "{{ sync_user }}"
+    mode: "0700"
+  loop: "{{ [sync_state_dir, sync_root] + sync_dirs }}"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - paths
+
+- name: Ensure local age key directory exists
+  file:
+    path: "{{ sync_home }}/.config/sops/age"
+    state: directory
+    owner: "{{ sync_user }}"
+    group: "{{ sync_user }}"
+    mode: "0700"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Ensure local age identity exists
+  command: "age-keygen -o {{ sync_age_identity_file }}"
+  args:
+    creates: "{{ sync_age_identity_file }}"
+  become: true
+  become_user: "{{ sync_user }}"
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Read local age public key
+  shell: "awk '/^# public key:/{print $4}' {{ sync_age_identity_file }}"
+  register: sync_public_key_cmd
+  changed_when: false
+  become: true
+  become_user: "{{ sync_user }}"
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Set local age public key fact
+  set_fact:
+    sync_local_age_public_key: "{{ sync_public_key_cmd.stdout | trim }}"
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Build recipient mesh from managed hosts
+  set_fact:
+    sync_mesh_recipients: >-
+      {{
+        (
+          ansible_play_hosts_all
+          | map('extract', hostvars, 'sync_local_age_public_key')
+          | select('defined')
+          | map('trim')
+          | reject('equalto', '')
+          | list
+        )
+        + (sync_age_extra_recipients | default([]))
+        + ([sync_age_recipient] if (sync_age_recipient | trim | length) > 0 else [])
+      }}
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Require full parity host set for secrets mesh updates
+  assert:
+    that:
+      - ansible_play_hosts_all | length == groups['fedora_machines'] | length
+    fail_msg: >-
+      Secret parity updates must target all fedora_machines at once.
+      Re-run without -l so no host loses recipient coverage.
+  when:
+    - sync_enabled | bool
+    - sync_require_full_recipient_mesh | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Enforce full recipient mesh for secret parity
+  assert:
+    that:
+      - sync_mesh_recipients | unique | length >= (ansible_play_hosts_all | length)
+    fail_msg: >-
+      Secret parity mesh is incomplete. Run this play against all parity hosts
+      (without -l), or set sync_age_extra_recipients to include missing public keys.
+  when:
+    - sync_enabled | bool
+    - sync_require_full_recipient_mesh | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Enable and start native syncthing system service for user
+  systemd:
+    name: "syncthing@{{ sync_user }}.service"
+    enabled: true
+    state: started
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - syncthing
+
+- name: Install parity secrets pack script
+  template:
+    src: parity-secrets-pack.sh.j2
+    dest: /usr/local/bin/parity-secrets-pack.sh
+    owner: root
+    group: root
+    mode: "0750"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Install parity secrets unpack script
+  template:
+    src: parity-secrets-unpack.sh.j2
+    dest: /usr/local/bin/parity-secrets-unpack.sh
+    owner: root
+    group: root
+    mode: "0750"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Ensure parity-sync config directory exists
+  file:
+    path: /etc/parity-sync
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Write parity secret source path manifest
+  copy:
+    dest: "/etc/parity-sync/{{ sync_user }}.paths"
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      {% for p in sync_secret_source_paths %}
+      {{ p }}
+      {% endfor %}
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Write age recipients file for encrypted secret bundle
+  copy:
+    dest: "/etc/parity-sync/{{ sync_user }}.recipient"
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      {% for recipient in (sync_mesh_recipients | unique) %}
+      {{ recipient }}
+      {% endfor %}
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Install parity secret pack service unit
+  template:
+    src: parity-secrets-pack.service.j2
+    dest: "/etc/systemd/system/parity-secrets-pack@{{ sync_user }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Install parity secret pack timer unit
+  template:
+    src: parity-secrets-pack.timer.j2
+    dest: "/etc/systemd/system/parity-secrets-pack@{{ sync_user }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Install parity secret unpack service unit
+  template:
+    src: parity-secrets-unpack.service.j2
+    dest: "/etc/systemd/system/parity-secrets-unpack@{{ sync_user }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Install parity secret unpack timer unit
+  template:
+    src: parity-secrets-unpack.timer.j2
+    dest: "/etc/systemd/system/parity-secrets-unpack@{{ sync_user }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Reload systemd for parity secret units
+  systemd:
+    daemon_reload: true
+  become: true
+  when: sync_enabled | bool
+  tags:
+    - sync
+    - secrets
+
+- name: Enable and start parity secret timers
+  systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  become: true
+  loop:
+    - "parity-secrets-pack@{{ sync_user }}.timer"
+    - "parity-secrets-unpack@{{ sync_user }}.timer"
+  when:
+    - sync_enabled | bool
+    - sync_enable_secret_timers | bool
+  tags:
+    - sync
+    - secrets
+

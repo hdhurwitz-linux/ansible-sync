@@ -1,0 +1,76 @@
+---
+- name: Ensure .config directory exists
+  file:
+    path: "{{ ansible_user_dir }}/.config"
+    state: directory
+    mode: "0755"
+
+- name: Deploy .bashrc
+  copy:
+    src: bashrc
+    dest: "{{ ansible_user_dir }}/.bashrc"
+    mode: "0644"
+  tags:
+    - shell-config
+
+- name: Deploy .bash_profile
+  copy:
+    src: bash_profile
+    dest: "{{ ansible_user_dir }}/.bash_profile"
+    mode: "0644"
+  tags:
+    - shell-config
+
+- name: Deploy .bash_logout
+  copy:
+    src: bash_logout
+    dest: "{{ ansible_user_dir }}/.bash_logout"
+    mode: "0644"
+  tags:
+    - shell-config
+
+- name: Deploy .zshrc
+  copy:
+    src: zshrc
+    dest: "{{ ansible_user_dir }}/.zshrc"
+    mode: "0644"
+  tags:
+    - shell-config
+
+- name: Deploy .gitconfig
+  template:
+    src: gitconfig.j2
+    dest: "{{ ansible_user_dir }}/.gitconfig"
+    mode: "0644"
+  tags:
+    - git-config
+
+- name: Deploy .npmrc
+  copy:
+    src: npmrc
+    dest: "{{ ansible_user_dir }}/.npmrc"
+    mode: "0644"
+  tags:
+    - npm-config
+
+- name: Ensure ~/.bashrc.d exists
+  file:
+    path: "{{ ansible_user_dir }}/.bashrc.d"
+    state: directory
+    mode: "0755"
+
+- name: Deploy common bash functions
+  copy:
+    src: bashrc.d/functions
+    dest: "{{ ansible_user_dir }}/.bashrc.d/functions"
+    mode: "0644"
+  tags:
+    - shell-config
+
+- name: Deploy shell aliases
+  copy:
+    src: bashrc.d/aliases
+    dest: "{{ ansible_user_dir }}/.bashrc.d/aliases"
+    mode: "0644"
+  tags:
+    - shell-config

@@ -1,0 +1,28 @@
+# .zshrc
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="robbyrussell"
+
+plugins=(git docker poetry)
+
+source $ZSH/oh-my-zsh.sh
+
+# User specific environment
+if ! [[ "$PATH" =~ "$HOME/.local/bin:$HOME/bin:" ]]; then
+    PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+fi
+export PATH
+
+# Load custom rc files
+if [ -d ~/.bashrc.d ]; then
+    for rc in ~/.bashrc.d/*; do
+        if [ -f "$rc" ]; then
+            . "$rc"
+        fi
+    done
+fi
+
+[ -f "$HOME/.config/fedora-path.sh" ] && source "$HOME/.config/fedora-path.sh"
+
+if command -v gh &> /dev/null; then
+    export GITHUB_PAT=$(gh auth token 2>/dev/null)
+fi

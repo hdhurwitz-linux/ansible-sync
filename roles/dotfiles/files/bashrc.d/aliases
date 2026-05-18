@@ -1,0 +1,29 @@
+#!/bin/bash
+# Common bash functions
+
+# Enhanced ls with colors
+alias ls="ls --color=auto"
+alias ll="ls -lah"
+alias la="ls -A"
+
+# Navigation
+alias ..="cd .."
+alias ...="cd ../.."
+alias ....="cd ../../.."
+
+# Git shortcuts
+alias gs="git status"
+alias ga="git add"
+alias gc="git commit"
+alias gp="git push"
+alias gl="git log"
+alias gd="git diff"
+
+# System
+alias grep="grep --color=auto"
+alias df="df -h"
+alias du="du -h"
+
+# Ansible shortcuts
+alias ans="ansible"
+alias ansp="ansible-playbook"

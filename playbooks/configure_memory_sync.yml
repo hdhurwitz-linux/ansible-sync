@@ -1,0 +1,86 @@
+---
+- name: Configure Copilot memory and chat-history sync across machines
+  hosts: all
+  become: false
+  gather_facts: true
+
+  vars:
+    user_home: "{{ ansible_env.HOME }}"
+    scripts_dir: "{{ user_home }}/ansible-sync/scripts"
+    sync_script: "{{ scripts_dir }}/sync_copilot_memory.sh"
+    systemd_user_dir: "{{ user_home }}/.config/systemd/user"
+
+  tasks:
+    - name: Ensure scripts directory exists
+      ansible.builtin.file:
+        path: "{{ scripts_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Deploy sync_copilot_memory.sh
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/sync_copilot_memory.sh"
+        dest: "{{ sync_script }}"
+        mode: "0755"
+
+    - name: Ensure systemd user directory exists
+      ansible.builtin.file:
+        path: "{{ systemd_user_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Install memory-sync.service
+      ansible.builtin.copy:
+        dest: "{{ systemd_user_dir }}/memory-sync.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Sync Copilot memories/chat history to shared repo
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/bash {{ sync_script }}
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=default.target
+      notify: reload user daemon
+
+    - name: Install memory-sync.timer
+      ansible.builtin.copy:
+        dest: "{{ systemd_user_dir }}/memory-sync.timer"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Run memory sync every 30 minutes
+
+          [Timer]
+          OnBootSec=3min
+          OnUnitActiveSec=30min
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+      notify: reload user daemon
+
+    - name: Enable and start memory-sync.timer
+      ansible.builtin.systemd:
+        name: memory-sync.timer
+        enabled: true
+        state: started
+        scope: user
+      failed_when: false
+
+    - name: Run initial memory sync now
+      ansible.builtin.command: "/bin/bash {{ sync_script }}"
+      changed_when: false
+      failed_when: false
+
+  handlers:
+    - name: reload user daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+        scope: user

@@ -91,7 +91,7 @@
         - "{{ target_user_home }}/.config/mcp/profiles.d"
         - "{{ target_user_home }}/.config/api-profiles"
         - "{{ target_user_home }}/.config/postgres"
-        - "{{ target_user_home }}/backups/postgres"
+        - "{{ target_user_home }}/Postegre-Database"
         - "{{ target_user_home }}/.config/prompts"
         - "{{ target_user_home }}/.config/skills"
         - "{{ target_user_home }}/.config/honcho"

@@ -1,0 +1,160 @@
+---
+# Removes postgres dumps/folders from the Obsidian vault on any machine,
+# stops/disables any old services that point into the vault, and deploys
+# the correct pg-backup service pointing to ~/Postegre-Database/.
+#
+# Safe to run repeatedly. All paths resolved dynamically — no hardcoding.
+
+- name: Fix PostgreSQL vault misconfig and deploy correct backup services
+  hosts: all
+  become: false
+  gather_facts: true
+
+  vars:
+    user_home: "{{ ansible_env.HOME }}"
+    pg_repo_dir: "{{ user_home }}/postegre-lr-copilot-database"
+    pg_backup_script: "{{ pg_repo_dir }}/scripts/pg-backup-and-push.sh"
+    pg_session_end: "{{ pg_repo_dir }}/scripts/pg-session-end.sh"
+    backup_local_dir: "{{ user_home }}/Postegre-Database"
+    systemd_user_dir: "{{ user_home }}/.config/systemd/user"
+
+    # Old service names that may point into the vault
+    old_services:
+      - pg-backup-shutdown.service
+      - pg-backup-startup.timer
+
+  tasks:
+    # ── 1. Find the Obsidian vault dynamically ───────────────────────────────
+    - name: Find Obsidian vault location
+      ansible.builtin.find:
+        paths: "{{ user_home }}"
+        patterns: ".obsidian"
+        file_type: directory
+        recurse: true
+        depth: 5
+      register: obsidian_dirs
+
+    - name: Derive vault root paths
+      ansible.builtin.set_fact:
+        obsidian_vault_roots: >-
+          {{ obsidian_dirs.files | map(attribute='path')
+             | map('dirname') | list }}
+
+    - name: Report found vaults
+      ansible.builtin.debug:
+        msg: "Obsidian vaults found: {{ obsidian_vault_roots }}"
+
+    # ── 2. Remove postgres-backups folder from every vault found ─────────────
+    - name: Remove postgres-backups folder from vault
+      ansible.builtin.file:
+        path: "{{ item }}/postgres-backups"
+        state: absent
+      loop: "{{ obsidian_vault_roots }}"
+      when: obsidian_vault_roots | length > 0
+
+    - name: Remove ASSETS/Databases directory from vault
+      ansible.builtin.file:
+        path: "{{ item }}/ASSETS/Databases"
+        state: absent
+      loop: "{{ obsidian_vault_roots }}"
+      when: obsidian_vault_roots | length > 0
+
+    # ── 3. Ensure local postgres working dir exists (correct location) ───────
+    - name: Ensure ~/Postegre-Database exists with tight permissions
+      ansible.builtin.file:
+        path: "{{ backup_local_dir }}"
+        state: directory
+        mode: "0700"
+
+    # ── 4. Stop and disable old vault-pointing services ──────────────────────
+    - name: Stop and disable old pg-backup services pointing to vault
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+        scope: user
+      loop: "{{ old_services }}"
+      failed_when: false # service may not exist on every machine
+
+    - name: Remove old service/timer files that hardcode vault paths
+      ansible.builtin.file:
+        path: "{{ systemd_user_dir }}/{{ item }}"
+        state: absent
+      loop: "{{ old_services }}"
+      notify: reload systemd user daemon
+
+    # ── 5. Deploy correct pg-backup.service (uses %h, no hardcoded paths) ────
+    - name: Ensure systemd user directory exists
+      ansible.builtin.file:
+        path: "{{ systemd_user_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Deploy pg-backup.service (points to repo script, no vault refs)
+      ansible.builtin.copy:
+        dest: "{{ systemd_user_dir }}/pg-backup.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=PostgreSQL sync from %h/Postegre-Database/ to GitHub
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/bash %h/postegre-lr-copilot-database/scripts/pg-backup-and-push.sh
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=default.target
+      notify: reload systemd user daemon
+
+    - name: Deploy pg-backup.timer (daily, persistent)
+      ansible.builtin.copy:
+        dest: "{{ systemd_user_dir }}/pg-backup.timer"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Run PostgreSQL backup daily
+
+          [Timer]
+          OnCalendar=daily
+          Persistent=true
+          RandomizedDelaySec=10min
+
+          [Install]
+          WantedBy=timers.target
+      notify: reload systemd user daemon
+
+    - name: Enable pg-backup.timer
+      ansible.builtin.systemd:
+        name: pg-backup.timer
+        enabled: true
+        scope: user
+      failed_when: false
+
+    # ── 6. Fix pg-backup-and-push.sh on this machine if repo is cloned ───────
+    - name: Check if postgres repo is cloned locally
+      ansible.builtin.stat:
+        path: "{{ pg_repo_dir }}"
+      register: pg_repo_stat
+
+    - name: Clone postgres repo if not present
+      ansible.builtin.git:
+        repo: "https://github.com/hdhurwitz-linux/postegre-lr-copilot-database.git"
+        dest: "{{ pg_repo_dir }}"
+        version: main
+      when: not pg_repo_stat.stat.exists
+      failed_when: false
+
+    - name: Ensure pg-backup-and-push.sh is executable
+      ansible.builtin.file:
+        path: "{{ pg_backup_script }}"
+        mode: "0755"
+      when: pg_repo_stat.stat.exists or not pg_repo_stat.stat.exists
+
+  handlers:
+    - name: reload systemd user daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+        scope: user

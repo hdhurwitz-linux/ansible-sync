@@ -1,0 +1,6 @@
+# Variables shared across all managed Fedora machines
+ansible_python_interpreter: /usr/bin/python3
+git_user_name: hdh
+git_user_email: hdh@users.noreply.github.com
+ansible_parity_controller_enabled: true
+ansible_parity_controller_host: coordinator

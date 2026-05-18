@@ -5,7 +5,6 @@
 
   vars:
     backup_dirs:
-      - postgres
       - nodejs
       - databases
       - app-state
@@ -26,17 +25,25 @@
         content: |
           Non-Obsidian app data backups
           ==============================
-          postgres/    - PostgreSQL dumps (pg_dump output)
           nodejs/      - Node.js project snapshots
           databases/   - SQLite and other database files
           app-state/   - Application configuration state
           app-data/    - General app data directories
           logs/        - Application log archives
 
+          PostgreSQL working folder is separate and obvious:
+          {{ ansible_env.HOME }}/Postegre-Database
+
           RULE: Never put any of this in the Obsidian vault.
           Only markdown (.md) files belong in Obsidian.
         mode: "0644"
       changed_when: false
+
+    - name: Ensure PostgreSQL working directory exists at top-level
+      file:
+        path: "{{ ansible_env.HOME }}/Postegre-Database"
+        state: directory
+        mode: "0700"
 
     - name: Report
       debug:

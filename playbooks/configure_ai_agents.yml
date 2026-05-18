@@ -1,0 +1,180 @@
+---
+# Start AI agents on boot where appropriate.
+# Detects what's installed per-machine — nothing assumed, nothing hardcoded.
+# Covers: Ollama, Honcho (api/worker/scheduler), GroundhogDay checkpoint daemon.
+
+- name: Configure AI agent autostart on boot
+  hosts: all
+  become: false
+  gather_facts: true
+
+  vars:
+    user_home: "{{ ansible_env.HOME }}"
+    systemd_user_dir: "{{ user_home }}/.config/systemd/user"
+    honcho_procfile: "{{ user_home }}/.config/honcho/Procfile"
+    gday_config: "{{ user_home }}/.config/groundhogday/config.yml"
+
+  tasks:
+    # ── Ollama ───────────────────────────────────────────────────────────────
+    - name: Check if ollama is installed
+      ansible.builtin.command: which ollama
+      register: ollama_which
+      changed_when: false
+      failed_when: false
+
+    - name: Enable and start ollama system service (installed system-wide)
+      become: true
+      ansible.builtin.systemd:
+        name: ollama
+        enabled: true
+        state: started
+      when:
+        - ollama_which.rc == 0
+        - ansible_facts['service_mgr'] == 'systemd'
+      failed_when: false
+      register: ollama_system_svc
+
+    - name: Deploy ollama user service (fallback if no system service)
+      ansible.builtin.copy:
+        dest: "{{ systemd_user_dir }}/ollama.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Ollama local LLM server
+          After=network.target
+
+          [Service]
+          ExecStart={{ ollama_which.stdout }} serve
+          Restart=on-failure
+          RestartSec=5
+          Environment=OLLAMA_HOST=127.0.0.1:11434
+
+          [Install]
+          WantedBy=default.target
+      when:
+        - ollama_which.rc == 0
+        - ollama_system_svc is failed or ollama_system_svc.status is undefined
+      notify: reload user daemon
+
+    - name: Enable ollama user service
+      ansible.builtin.systemd:
+        name: ollama.service
+        enabled: true
+        scope: user
+      when:
+        - ollama_which.rc == 0
+        - ollama_system_svc is failed or ollama_system_svc.status is undefined
+      failed_when: false
+      notify: reload user daemon
+
+    # ── Honcho (process manager for api/worker/scheduler) ────────────────────
+    - name: Check if honcho is installed
+      ansible.builtin.command: which honcho
+      register: honcho_which
+      changed_when: false
+      failed_when: false
+
+    - name: Check if Honcho Procfile exists
+      ansible.builtin.stat:
+        path: "{{ honcho_procfile }}"
+      register: procfile_stat
+
+    - name: Deploy honcho.service (starts all processes in Procfile)
+      ansible.builtin.copy:
+        dest: "{{ systemd_user_dir }}/honcho.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Honcho process manager (api, worker, scheduler)
+          After=network-online.target ollama.service
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory={{ user_home }}
+          ExecStart={{ honcho_which.stdout }} start -f {{ honcho_procfile }}
+          Restart=on-failure
+          RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=default.target
+      when:
+        - honcho_which.rc == 0
+        - procfile_stat.stat.exists
+      notify: reload user daemon
+
+    - name: Enable and start honcho.service
+      ansible.builtin.systemd:
+        name: honcho.service
+        enabled: true
+        state: started
+        scope: user
+      when:
+        - honcho_which.rc == 0
+        - procfile_stat.stat.exists
+      failed_when: false
+      notify: reload user daemon
+
+    # ── GroundhogDay checkpoint daemon ───────────────────────────────────────
+    - name: Check if groundhogday is installed
+      ansible.builtin.command: which groundhogday
+      register: gday_which
+      changed_when: false
+      failed_when: false
+
+    - name: Check if GroundhogDay config exists
+      ansible.builtin.stat:
+        path: "{{ gday_config }}"
+      register: gday_config_stat
+
+    - name: Deploy groundhogday.service
+      ansible.builtin.copy:
+        dest: "{{ systemd_user_dir }}/groundhogday.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=GroundhogDay checkpoint daemon
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart={{ gday_which.stdout }} daemon --config {{ gday_config }}
+          Restart=on-failure
+          RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=default.target
+      when:
+        - gday_which.rc == 0
+        - gday_config_stat.stat.exists
+      notify: reload user daemon
+
+    - name: Enable and start groundhogday.service
+      ansible.builtin.systemd:
+        name: groundhogday.service
+        enabled: true
+        state: started
+        scope: user
+      when:
+        - gday_which.rc == 0
+        - gday_config_stat.stat.exists
+      failed_when: false
+
+    # ── Report ───────────────────────────────────────────────────────────────
+    - name: Report AI agent boot status
+      ansible.builtin.debug:
+        msg: >-
+          AI agents configured on {{ inventory_hostname }}:
+          ollama={{ ollama_which.rc == 0 }},
+          honcho={{ honcho_which.rc == 0 and procfile_stat.stat.exists }},
+          groundhogday={{ gday_which.rc == 0 and gday_config_stat.stat.exists }}
+
+  handlers:
+    - name: reload user daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+        scope: user
