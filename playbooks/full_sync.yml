@@ -4,6 +4,10 @@
 - import_playbook: configure_proton_pass.yml
 - import_playbook: configure_extra_repos.yml
 - import_playbook: converge_future_stack.yml
+- import_playbook: configure_backup_dirs.yml
+- import_playbook: fix_postgres_vault_misconfig.yml
+- import_playbook: configure_memory_sync.yml
+- import_playbook: configure_ai_agents.yml
 - import_playbook: configure_virtualization_stack.yml
 - import_playbook: discover_ai_inventory.yml
 - import_playbook: merge_tailnet_secrets.yml

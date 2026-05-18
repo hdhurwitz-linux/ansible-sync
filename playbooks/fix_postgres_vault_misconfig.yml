@@ -59,6 +59,64 @@
       loop: "{{ obsidian_vault_roots }}"
       when: obsidian_vault_roots | length > 0
 
+    - name: Remove postgres-backups references from Obsidian workspace.json
+      ansible.builtin.shell: |
+        python3 - << 'PY'
+        import json
+        from pathlib import Path
+        p = Path("{{ item }}/.obsidian/workspace.json")
+        if not p.exists():
+            raise SystemExit(0)
+        obj = json.loads(p.read_text())
+        def scrub(x):
+            if isinstance(x, dict):
+                out = {}
+                for k, v in x.items():
+                    sv = scrub(v)
+                    if isinstance(sv, str) and "postgres-backups" in sv:
+                        continue
+                    out[k] = sv
+                return out
+            if isinstance(x, list):
+                out = []
+                for i in x:
+                    si = scrub(i)
+                    if isinstance(si, str) and "postgres-backups" in si:
+                        continue
+                    out.append(si)
+                return out
+            return x
+        p.write_text(json.dumps(scrub(obj), indent=2))
+        PY
+      args:
+        executable: /bin/bash
+      loop: "{{ obsidian_vault_roots }}"
+      when: obsidian_vault_roots | length > 0
+      changed_when: true
+      failed_when: false
+
+    - name: Exclude postgres-backups in folder-notes plugin config
+      ansible.builtin.shell: |
+        python3 - << 'PY'
+        import json
+        from pathlib import Path
+        p = Path("{{ item }}/.obsidian/plugins/folder-notes/data.json")
+        if not p.exists():
+            raise SystemExit(0)
+        obj = json.loads(p.read_text())
+        ex = obj.get("excludeFolders", [])
+        if "postgres-backups" not in ex:
+            ex.append("postgres-backups")
+            obj["excludeFolders"] = ex
+            p.write_text(json.dumps(obj, indent=2))
+        PY
+      args:
+        executable: /bin/bash
+      loop: "{{ obsidian_vault_roots }}"
+      when: obsidian_vault_roots | length > 0
+      changed_when: true
+      failed_when: false
+
     # ── 3. Ensure local postgres working dir exists (correct location) ───────
     - name: Ensure ~/Postegre-Database exists with tight permissions
       ansible.builtin.file:
