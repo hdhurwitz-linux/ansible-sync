@@ -4,13 +4,14 @@ set -euo pipefail
 
 REPO_URL="https://github.com/hdhurwitz-linux/ansible-sync.git"
 PLAYBOOK="playbooks/site.yml"
-VAULT_PASS_FILE="$HOME/.ansible_vault_pass"
+VAULT_PASS_FILE="$HOME/.config/ansible-sync/vault-pass.txt"
 
 echo "[1/4] Check dependencies..."
 command -v ansible-pull || sudo dnf install -y ansible || sudo apt-get install -y ansible
 
 echo "[2/4] Configure vault password..."
 if [[ ! -f "$VAULT_PASS_FILE" ]]; then
+  mkdir -p "$HOME/.config/ansible-sync"
   echo "VAULT_PASS_REQUIRED=true"
   echo "Copy .vault_pass from Coordinator: scp HDH@100.x.x.x:~/ansible-sync/.vault_pass $VAULT_PASS_FILE"
   echo "Or paste it here: "

@@ -27,6 +27,39 @@
         owner: "{{ target_user }}"
         group: "{{ target_user }}"
 
+    - name: Check for canonical vault pass file
+      ansible.builtin.stat:
+        path: "{{ target_user_home }}/.config/ansible-sync/vault-pass.txt"
+      register: canonical_vault_pass
+
+    - name: Check for legacy vault pass file
+      ansible.builtin.stat:
+        path: "{{ target_user_home }}/.ansible_vault_pass"
+      register: legacy_vault_pass
+
+    - name: Migrate legacy vault pass file to canonical location
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ target_user_home }}/.ansible_vault_pass"
+        dest: "{{ target_user_home }}/.config/ansible-sync/vault-pass.txt"
+        mode: "0600"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+      no_log: true
+      when:
+        - not canonical_vault_pass.stat.exists
+        - legacy_vault_pass.stat.exists
+
+    - name: Ensure legacy vault pass path points to canonical file
+      ansible.builtin.file:
+        src: "{{ target_user_home }}/.config/ansible-sync/vault-pass.txt"
+        dest: "{{ target_user_home }}/.ansible_vault_pass"
+        state: link
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        force: true
+      when: canonical_vault_pass.stat.exists or legacy_vault_pass.stat.exists
+
     - name: Ensure user systemd directory exists
       ansible.builtin.file:
         path: "{{ target_user_home }}/.config/systemd/user"
