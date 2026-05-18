@@ -28,6 +28,9 @@
       - "^fedora-repos($|-.*)"
       - "^fedora-gpg-keys($|-.*)"
       - "^filesystem($|-.*)"
+      - "^docker($|-.*)"
+      - '^containerd\.io$'
+      - "^podman-docker($|-.*)"
 
   tasks:
     - name: Build package union from all managed hosts

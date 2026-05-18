@@ -16,6 +16,11 @@
       - virt-install
       - megals
       - onedrive
+    vscode_extensions_remove:
+      - ms-azuretools.vscode-docker
+      - ms-azuretools.vscode-containers
+    vscode_extensions_install:
+      - dreamcatcher45.podmanager
 
   tasks:
     - name: Ensure profile.d exists
@@ -83,3 +88,27 @@
         dest: "{{ playbook_dir }}/../state/inventory/binary-path-report.json"
         mode: "0600"
         content: "{{ binary_report.stdout }}\n"
+
+    - name: Detect whether VS Code CLI is available
+      ansible.builtin.command: command -v code
+      register: code_cmd
+      changed_when: false
+      failed_when: false
+
+    - name: Remove Azure container extensions from VS Code
+      become: true
+      become_user: "{{ target_user }}"
+      ansible.builtin.command: "code --uninstall-extension {{ item }}"
+      loop: "{{ vscode_extensions_remove }}"
+      changed_when: false
+      failed_when: false
+      when: code_cmd.rc == 0
+
+    - name: Install Podman VS Code extension
+      become: true
+      become_user: "{{ target_user }}"
+      ansible.builtin.command: "code --install-extension {{ item }}"
+      loop: "{{ vscode_extensions_install }}"
+      changed_when: false
+      failed_when: false
+      when: code_cmd.rc == 0

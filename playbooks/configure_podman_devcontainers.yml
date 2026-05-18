@@ -7,21 +7,25 @@
     podman_packages:
       - podman
       - podman-compose
-      - podman-docker
       - buildah
       - skopeo
       - fuse-overlayfs
       - slirp4netns
     docker_packages_remove:
       - docker
+      - docker-cli
+      - docker-compose
+      - docker-compose-switch
+      - docker-buildx
       - docker-ce
       - docker-ce-cli
       - docker-buildx-plugin
       - docker-compose-plugin
       - containerd.io
+      - podman-docker
 
   tasks:
-    - name: Install Podman stack and docker-compat shim
+    - name: Install Podman stack
       become: true
       ansible.builtin.dnf:
         name: "{{ podman_packages }}"
@@ -61,12 +65,20 @@
           cgroup_manager = "systemd"
           events_logger = "journald"
 
-    - name: Verify docker compatibility command path
+    - name: Verify native podman command path
+      ansible.builtin.command: command -v podman
+      register: podman_cmd
+      changed_when: false
+      failed_when: podman_cmd.rc != 0
+
+    - name: Verify docker command is absent
       ansible.builtin.command: command -v docker
-      register: docker_shim
+      register: docker_cmd
       changed_when: false
       failed_when: false
 
-    - name: Report docker shim path
+    - name: Report container command paths
       ansible.builtin.debug:
-        msg: "docker command resolves to: {{ docker_shim.stdout | default('missing') }}"
+        msg:
+          - "podman command resolves to: {{ podman_cmd.stdout | default('missing') }}"
+          - "docker command resolves to: {{ docker_cmd.stdout | default('missing') }}"

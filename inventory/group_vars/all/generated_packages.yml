@@ -195,7 +195,6 @@ parity_union_packages:
   - compsize
   - conmon
   - container-selinux
-  - containerd.io
   - containers-common
   - containers-common-extra
   - coreutils
@@ -376,10 +375,6 @@ parity_union_packages:
   - dnf5daemon-server-polkit
   - dns-root-data
   - dnsmasq
-  - docker-buildx
-  - docker-cli
-  - docker-compose
-  - docker-compose-switch
   - dos2unix
   - dosfstools
   - dotconf
