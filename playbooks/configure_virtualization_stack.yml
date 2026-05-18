@@ -1,0 +1,49 @@
+- name: Configure virtualization stack (KVM/libvirt)
+  hosts: localhost
+  gather_facts: true
+  vars:
+    target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+
+  tasks:
+    - name: Install Fedora native virtualization group
+      become: true
+      ansible.builtin.command: dnf -y group install virtualization
+      changed_when: false
+      failed_when: false
+      when: enable_virtualization_stack | bool
+
+    - name: Ensure libvirt service is enabled and running
+      become: true
+      ansible.builtin.systemd:
+        name: libvirtd
+        enabled: true
+        state: started
+      when: enable_virtualization_stack | bool
+
+    - name: Ensure target user is in libvirt group
+      become: true
+      ansible.builtin.user:
+        name: "{{ target_user }}"
+        groups: libvirt
+        append: true
+      when: enable_virtualization_stack | bool
+
+    - name: Ensure target user is in kvm group
+      become: true
+      ansible.builtin.user:
+        name: "{{ target_user }}"
+        groups: kvm
+        append: true
+      when: enable_virtualization_stack | bool
+
+    - name: Ensure default libvirt network is active (best effort)
+      become: true
+      ansible.builtin.shell: |
+        set -e
+        virsh net-autostart default || true
+        virsh net-start default || true
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      when: enable_virtualization_stack | bool

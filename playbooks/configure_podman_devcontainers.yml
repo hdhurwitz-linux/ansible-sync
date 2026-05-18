@@ -1,0 +1,72 @@
+- name: Configure Podman-first container workflow (including VS Code Dev Containers compatibility)
+  hosts: localhost
+  gather_facts: true
+  vars:
+    target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+    target_user_home: "{{ lookup('ansible.builtin.pipe', 'getent passwd ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true)) ~ ' | cut -d: -f6') }}"
+    podman_packages:
+      - podman
+      - podman-compose
+      - podman-docker
+      - buildah
+      - skopeo
+      - fuse-overlayfs
+      - slirp4netns
+    docker_packages_remove:
+      - docker
+      - docker-ce
+      - docker-ce-cli
+      - docker-buildx-plugin
+      - docker-compose-plugin
+      - containerd.io
+
+  tasks:
+    - name: Install Podman stack and docker-compat shim
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ podman_packages }}"
+        state: present
+
+    - name: Remove Docker packages to avoid Podman conflict
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ docker_packages_remove }}"
+        state: absent
+      failed_when: false
+
+    - name: Disable Docker service if present
+      become: true
+      ansible.builtin.systemd:
+        name: docker
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    - name: Ensure user containers config directory exists
+      ansible.builtin.file:
+        path: "{{ target_user_home }}/.config/containers"
+        state: directory
+        mode: "0755"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+
+    - name: Configure user containers.conf defaults
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/containers/containers.conf"
+        mode: "0644"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        content: |
+          [engine]
+          cgroup_manager = "systemd"
+          events_logger = "journald"
+
+    - name: Verify docker compatibility command path
+      ansible.builtin.command: command -v docker
+      register: docker_shim
+      changed_when: false
+      failed_when: false
+
+    - name: Report docker shim path
+      ansible.builtin.debug:
+        msg: "docker command resolves to: {{ docker_shim.stdout | default('missing') }}"

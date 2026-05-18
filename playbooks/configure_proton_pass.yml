@@ -1,0 +1,42 @@
+---
+- name: Configure Proton Pass Flatpak
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Check if Proton Pass Flatpak is installed
+      shell: flatpak list --app | grep -q "me.proton.Pass"
+      register: proton_pass_installed
+      failed_when: false
+      changed_when: false
+
+    - name: Create Flatpak overrides directory
+      file:
+        path: "{{ ansible_user_dir }}/.local/share/flatpak/overrides"
+        state: directory
+        mode: "0755"
+      become: false
+      when: proton_pass_installed.rc == 0
+
+    - name: Fix Proton Pass clipboard write access (manually edit override file)
+      copy:
+        content: |
+          [Context]
+          filesystems=xdg-run/Clipboard:rw;
+        dest: "{{ ansible_user_dir }}/.local/share/flatpak/overrides/me.proton.Pass"
+        mode: "0644"
+      become: false
+      when: proton_pass_installed.rc == 0
+      register: clipboard_fix
+
+    - name: Report Proton Pass clipboard fix status
+      debug:
+        msg: |
+          Proton Pass Clipboard Fix:
+          {% if proton_pass_installed.rc == 0 %}
+          ✓ Installed
+          ✓ Clipboard read-write access enabled (xdg-run/Clipboard:rw)
+          ✓ Override written to ~/.local/share/flatpak/overrides/me.proton.Pass
+          ✓ Fix allows copy/paste to actually write to clipboard
+          {% else %}
+          ⊘ Proton Pass not installed on this host
+          {% endif %}

@@ -1,0 +1,40 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Ansible: Build Tailnet Inventory",
+            "type": "shell",
+            "command": "ansible-playbook -i inventory playbooks/build_tailnet_inventory.yml",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Ansible: Configure Pull Runner",
+            "type": "shell",
+            "command": "ansible-playbook -i inventory playbooks/configure_pull_runner.yml",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Ansible: Full Sync (local)",
+            "type": "shell",
+            "command": "ansible-playbook -i inventory playbooks/full_sync.yml --limit localhost",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Ansible: Full Sync (all reachable Linux)",
+            "type": "shell",
+            "command": "ansible-playbook -i inventory playbooks/full_sync.yml --limit tailscale_linux",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Systemd User: Check Pull Timers",
+            "type": "shell",
+            "command": "systemctl --user list-timers --all --no-pager | grep -E 'ansible-(sync-pull|sync|apps-converge|ai-inventory|merge-secrets|secrets-apply)' | cat",
+            "group": "test",
+            "problemMatcher": []
+        }
+    ]
+}

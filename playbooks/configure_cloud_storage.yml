@@ -1,0 +1,168 @@
+- name: Configure cloud storage clients and mounts (native where possible, rclone fallback)
+  hosts: localhost
+  gather_facts: true
+  vars:
+    target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+    target_user_home: "{{ lookup('ansible.builtin.pipe', 'getent passwd ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true)) ~ ' | cut -d: -f6') }}"
+
+  tasks:
+    - name: Install core cloud packages
+      become: true
+      ansible.builtin.dnf:
+        name:
+          - rclone
+          - fuse3
+        state: present
+
+    - name: Install native MEGA Linux tools when preferred
+      become: true
+      ansible.builtin.dnf:
+        name:
+          - megasync
+          - megatools
+        state: present
+      failed_when: false
+      when: cloud_use_native_mega | bool
+
+    - name: Attempt native OneDrive client install
+      become: true
+      ansible.builtin.dnf:
+        name: onedrive
+        state: present
+      register: onedrive_pkg_install
+      failed_when: false
+      when: cloud_use_native_onedrive | bool
+
+    - name: Ensure cloud mount root exists
+      become: true
+      ansible.builtin.file:
+        path: "{{ cloud_mount_root }}"
+        state: directory
+        mode: "0775"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+
+    - name: Ensure cloud mountpoints exist
+      become: true
+      ansible.builtin.file:
+        path: "{{ item.mountpoint }}"
+        state: directory
+        mode: "0775"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+      loop: "{{ cloud_rclone_remotes }}"
+
+    - name: Ensure rclone config/mounts directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - "{{ target_user_home }}/.config/rclone"
+        - "{{ target_user_home }}/.config/rclone/mounts"
+
+    - name: Ensure onedrive config directory exists
+      ansible.builtin.file:
+        path: "{{ target_user_home }}/.config/onedrive"
+        state: directory
+        mode: "0700"
+
+    - name: Seed rclone config with remote stubs (safe placeholders)
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/rclone/rclone.conf"
+        mode: "0600"
+        force: false
+        content: |
+          # Run `rclone config` to authorize these remotes interactively.
+          #
+          # [mega]
+          # type = mega
+          #
+          # [onedrive-personal]
+          # type = onedrive
+          #
+          # [protondrive]
+          # type = protondrive
+          #
+          # [iclouddrive]
+          # type = iclouddrive
+
+    - name: Create per-remote rclone mount env files
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/rclone/mounts/{{ item.name }}.env"
+        mode: "0600"
+        content: |
+          REMOTE={{ item.name }}
+          MOUNTPOINT={{ item.mountpoint }}
+          EXTRA_OPTS=--vfs-cache-mode=full --dir-cache-time=72h --poll-interval=15s --umask 002 --allow-other
+      loop: "{{ cloud_rclone_remotes }}"
+
+    - name: Ensure user systemd directory exists
+      ansible.builtin.file:
+        path: "{{ target_user_home }}/.config/systemd/user"
+        state: directory
+        mode: "0755"
+
+    - name: Install rclone mount template service
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/systemd/user/rclone-mount@.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Rclone mount for %i
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          EnvironmentFile=%h/.config/rclone/mounts/%i.env
+          ExecStart=/usr/bin/bash -lc 'exec /usr/bin/rclone mount "${REMOTE}:" "${MOUNTPOINT}" ${EXTRA_OPTS}'
+          ExecStop=/usr/bin/bash -lc 'test -n "${MOUNTPOINT}" && /usr/bin/fusermount3 -u "${MOUNTPOINT}" || true'
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=default.target
+
+    - name: Install native OneDrive systemd user service
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/systemd/user/onedrive-sync.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Native OneDrive client sync
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/onedrive --monitor --confdir %h/.config/onedrive
+          Restart=on-failure
+          RestartSec=10
+
+          [Install]
+          WantedBy=default.target
+      when: cloud_use_native_onedrive | bool
+
+    - name: Install MEGA Flatpak app fallback when GUI sync requested
+      ansible.builtin.command: flatpak -y install flathub nz.mega.MEGAsync
+      changed_when: false
+      failed_when: false
+      when: cloud_install_mega_gui_sync | bool
+
+    - name: Reload user systemd daemon
+      ansible.builtin.command: systemctl --user daemon-reload
+      changed_when: false
+
+    - name: Enable rclone mount services for configured remotes
+      ansible.builtin.command: "systemctl --user enable rclone-mount@{{ item.name }}.service"
+      changed_when: false
+      loop: "{{ cloud_rclone_remotes }}"
+
+    - name: Enable native OneDrive service when installed
+      ansible.builtin.command: systemctl --user enable onedrive-sync.service
+      changed_when: false
+      when:
+        - cloud_use_native_onedrive | bool
+        - onedrive_pkg_install is defined
+        - not (onedrive_pkg_install.failed | default(false))

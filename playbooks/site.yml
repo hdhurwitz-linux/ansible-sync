@@ -1,0 +1,5 @@
+- name: Consolidate and sync workstation state
+  hosts: localhost
+  gather_facts: true
+  roles:
+    - role: local_sync

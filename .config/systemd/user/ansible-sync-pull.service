@@ -1,0 +1,9 @@
+[Unit]
+Description=Pull GitHub ansible-sync repo and converge workstation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/ansible-sync/pull.env
+ExecStart=/usr/bin/bash -lc 'set -euo pipefail; ANSIBLE_OPTS=""; if [[ -n "${ANSIBLE_SYNC_VAULT_PASS_FILE:-}" && -f "${ANSIBLE_SYNC_VAULT_PASS_FILE}" ]]; then ANSIBLE_OPTS="--vault-password-file ${ANSIBLE_SYNC_VAULT_PASS_FILE}"; fi; ansible-pull -U "${ANSIBLE_SYNC_REPO_URL}" -C "${ANSIBLE_SYNC_REPO_BRANCH:-main}" -d "${ANSIBLE_SYNC_CHECKOUT_DIR:-$HOME/ansible-sync-pull}" -i "${ANSIBLE_SYNC_INVENTORY:-inventory}" ${ANSIBLE_OPTS} "${ANSIBLE_SYNC_PLAYBOOK:-playbooks/full_sync.yml}"'

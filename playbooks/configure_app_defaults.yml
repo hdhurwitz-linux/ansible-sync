@@ -1,0 +1,85 @@
+- name: Configure installed apps with non-hardcoded defaults and PATH verification
+  hosts: localhost
+  gather_facts: true
+  vars:
+    target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+    target_user_home: "{{ lookup('ansible.builtin.pipe', 'getent passwd ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true)) ~ ' | cut -d: -f6') }}"
+    app_env_file: "{{ target_user_home }}/.config/profile.d/20-app-defaults.sh"
+    app_binary_checks:
+      - openclaw
+      - pnpm
+      - pipx
+      - ollama
+      - rclone
+      - podman
+      - virsh
+      - virt-install
+      - megals
+      - onedrive
+
+  tasks:
+    - name: Ensure profile.d exists
+      ansible.builtin.file:
+        path: "{{ target_user_home }}/.config/profile.d"
+        state: directory
+        mode: "0755"
+
+    - name: Write app defaults profile (no hardcoded user paths)
+      ansible.builtin.copy:
+        dest: "{{ app_env_file }}"
+        mode: "0644"
+        content: |
+          # Ansible-managed app defaults (portable pathing)
+          export NPM_CONFIG_PREFIX="${HOME}/.npm-global"
+          export RCLONE_CONFIG="${HOME}/.config/rclone/rclone.conf"
+          export CALIBRE_CONFIG_DIRECTORY="${HOME}/.config/calibre"
+          export XDG_CONFIG_HOME="${HOME}/.config"
+          export XDG_DATA_HOME="${HOME}/.local/share"
+
+    - name: Ensure shell profiles source app defaults file
+      ansible.builtin.blockinfile:
+        path: "{{ item }}"
+        create: true
+        marker: "# {mark} ANSIBLE MANAGED APP DEFAULTS"
+        block: |
+          if [ -f "{{ app_env_file }}" ]; then
+            . "{{ app_env_file }}"
+          fi
+      loop:
+        - "{{ target_user_home }}/.bashrc"
+        - "{{ target_user_home }}/.profile"
+
+    - name: Ensure state inventory directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../state/inventory"
+        state: directory
+        mode: "0700"
+
+    - name: Collect binary path report
+      ansible.builtin.shell: |
+        set -e
+        {
+          echo "{"
+          echo "  \"generated_at\": \"$(date -Iseconds)\"," 
+          echo "  \"binaries\": {"
+          first=1
+          for b in {{ app_binary_checks | join(' ') }}; do
+            p="$(command -v "$b" 2>/dev/null || true)"
+            [ $first -eq 1 ] || echo ","
+            first=0
+            printf "    \"%s\": \"%s\"" "$b" "$p"
+          done
+          echo
+          echo "  }"
+          echo "}"
+        }
+      args:
+        executable: /bin/bash
+      register: binary_report
+      changed_when: false
+
+    - name: Save binary path report
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../state/inventory/binary-path-report.json"
+        mode: "0600"
+        content: "{{ binary_report.stdout }}\n"

@@ -1,0 +1,90 @@
+- name: Ensure consolidation root exists
+  ansible.builtin.file:
+    path: "{{ consolidation_root }}"
+    state: directory
+    mode: "0700"
+
+- name: Ensure profile.d directory exists
+  ansible.builtin.file:
+    path: "{{ path_profile_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Write managed PATH profile
+  ansible.builtin.copy:
+    dest: "{{ path_profile_file }}"
+    mode: "0644"
+    content: |
+      # Managed by Ansible local_sync role
+      managed_paths="{{ managed_bin_paths | join(':') }}"
+      if [ -n "${PATH:-}" ]; then
+        for p in ${managed_paths//:/ }; do
+          case ":$PATH:" in
+            *":$p:"*) ;;
+            *) PATH="$p:$PATH" ;;
+          esac
+        done
+      else
+        PATH="$managed_paths"
+      fi
+      export PATH
+
+- name: Ensure bashrc sources managed profile
+  ansible.builtin.blockinfile:
+    path: "{{ user_home }}/.bashrc"
+    create: true
+    marker: "# {mark} ANSIBLE MANAGED PATH PROFILE"
+    block: |
+      if [ -f "{{ path_profile_file }}" ]; then
+        . "{{ path_profile_file }}"
+      fi
+
+- name: Ensure profile sources managed profile
+  ansible.builtin.blockinfile:
+    path: "{{ user_home }}/.profile"
+    create: true
+    marker: "# {mark} ANSIBLE MANAGED PATH PROFILE"
+    block: |
+      if [ -f "{{ path_profile_file }}" ]; then
+        . "{{ path_profile_file }}"
+      fi
+
+- name: Check each sync target
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop: "{{ sync_targets }}"
+  register: sync_target_stats
+
+- name: Mirror existing targets into consolidation root
+  ansible.posix.synchronize:
+    src: "{{ item.item.path }}/"
+    dest: "{{ consolidation_root }}/{{ item.item.id }}/"
+    archive: true
+    delete: true
+    rsync_opts: "{{ sync_rsync_opts }}"
+  loop: "{{ sync_target_stats.results }}"
+  when: item.stat.exists and item.stat.isdir
+  delegate_to: localhost
+
+- name: Ensure destination directory exists for file targets
+  ansible.builtin.file:
+    path: "{{ consolidation_root }}/{{ item.item.id }}"
+    state: directory
+    mode: "0700"
+  loop: "{{ sync_target_stats.results }}"
+  when: item.stat.exists and item.stat.isreg
+
+- name: Mirror existing file targets into consolidation root
+  ansible.builtin.copy:
+    src: "{{ item.item.path }}"
+    dest: "{{ consolidation_root }}/{{ item.item.id }}/{{ item.item.path | basename }}"
+    mode: preserve
+    remote_src: true
+  loop: "{{ sync_target_stats.results }}"
+  when: item.stat.exists and item.stat.isreg
+
+- name: Note missing targets
+  ansible.builtin.debug:
+    msg: "Skipping missing path: {{ item.item.path }}"
+  loop: "{{ sync_target_stats.results }}"
+  when: not item.stat.exists

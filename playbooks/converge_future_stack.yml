@@ -1,0 +1,243 @@
+- name: Converge future-ready agent/API/Postgres stack
+  hosts: localhost
+  gather_facts: true
+  vars:
+    target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+    target_user_home: "{{ lookup('ansible.builtin.pipe', 'getent passwd ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true)) ~ ' | cut -d: -f6') }}"
+    base_packages:
+      - jq
+      - yq
+      - age
+      - direnv
+      - make
+      - sqlite
+      - tmux
+      - ripgrep
+      - fd-find
+      - gh
+      - git
+      - podman
+    optional_packages: "{{ optional_future_packages | default(['sops']) }}"
+    postgres_packages:
+      - postgresql
+      - postgresql-server
+      - postgresql-contrib
+      - libpq
+    postgres_python_optional:
+      - python3-psycopg2
+      - python3-psycopg
+
+  tasks:
+    - name: Check passwordless sudo availability
+      ansible.builtin.command: sudo -n true
+      register: sudo_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set sudo capability fact
+      ansible.builtin.set_fact:
+        has_passwordless_sudo: "{{ sudo_check.rc == 0 }}"
+
+    - name: Install base ops/dev packages
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ base_packages }}"
+        state: present
+      when: has_passwordless_sudo | bool
+
+    - name: Install optional future packages when available
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ optional_packages }}"
+      failed_when: false
+      changed_when: false
+      when: has_passwordless_sudo | bool
+
+    - name: Install postgres toolchain packages
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ postgres_packages }}"
+        state: present
+      when: enable_postgres_toolchain | bool and has_passwordless_sudo | bool
+
+    - name: Install optional postgres python adapters when available
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ postgres_python_optional }}"
+      failed_when: false
+      changed_when: false
+      when: enable_postgres_toolchain | bool and has_passwordless_sudo | bool
+
+    - name: Note skipped root package installation when sudo is unavailable
+      ansible.builtin.debug:
+        msg: "Skipping DNF future-stack installs (no passwordless sudo in unattended session)."
+      when: not (has_passwordless_sudo | bool)
+
+    - name: Ensure growth directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - "{{ target_user_home }}/Projects/agents"
+        - "{{ target_user_home }}/Projects/apis"
+        - "{{ target_user_home }}/Projects/skills"
+        - "{{ target_user_home }}/.config/agents"
+        - "{{ target_user_home }}/.config/mcp/servers.d"
+        - "{{ target_user_home }}/.config/mcp/profiles.d"
+        - "{{ target_user_home }}/.config/api-profiles"
+        - "{{ target_user_home }}/.config/postgres"
+        - "{{ target_user_home }}/.config/prompts"
+        - "{{ target_user_home }}/.config/skills"
+        - "{{ target_user_home }}/.config/honcho"
+        - "{{ target_user_home }}/.config/groundhogday"
+      when: enable_agent_scaffolding | bool or enable_api_platform_scaffolding | bool
+
+    - name: Create agent manifest template
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/agents/agent-manifest.yml"
+        mode: "0600"
+        content: |
+          agents:
+            - id: research
+              runtime: python
+              env_file: ~/.config/ai-secrets/env
+              mcp_profiles: [default]
+            - id: coding
+              runtime: node
+              env_file: ~/.config/ai-secrets/env
+              mcp_profiles: [default]
+            - id: ops
+              runtime: python
+              env_file: ~/.config/ai-secrets/env
+              mcp_profiles: [infra]
+      when: enable_agent_scaffolding | bool
+
+    - name: Create API profile template
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/api-profiles/providers.yml"
+        mode: "0600"
+        content: |
+          providers:
+            openai:
+              env_key: OPENAI_API_KEY
+            anthropic:
+              env_key: ANTHROPIC_API_KEY
+            perplexity:
+              env_key: PERPLEXITY_API_KEY
+            openrouter:
+              env_key: OPENROUTER_API_KEY
+            google:
+              env_key: GOOGLE_API_KEY
+            groq:
+              env_key: GROQ_API_KEY
+            mistral:
+              env_key: MISTRAL_API_KEY
+            together:
+              env_key: TOGETHER_API_KEY
+            cohere:
+              env_key: COHERE_API_KEY
+            xai:
+              env_key: XAI_API_KEY
+            tavily:
+              env_key: TAVILY_API_KEY
+      when: enable_api_platform_scaffolding | bool
+
+    - name: Create MCP providers template
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/mcp/providers.yml"
+        mode: "0600"
+        content: |
+          mcp_servers:
+            github:
+              auth_env: MCP_GITHUB_TOKEN
+            notion:
+              auth_env: MCP_NOTION_TOKEN
+            slack:
+              auth_env: MCP_SLACK_TOKEN
+            linear:
+              auth_env: MCP_LINEAR_TOKEN
+            atlassian:
+              auth_env: MCP_ATLASSIAN_TOKEN
+          clients:
+            copilot:
+              config_hint: ~/.config/Code/User/mcp.json
+            continue:
+              config_hint: ~/.continue
+            codex:
+              config_hint: ~/.codex
+      when: enable_agent_scaffolding | bool
+
+    - name: Create skills registry template
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/skills/registry.yml"
+        mode: "0600"
+        content: |
+          skills:
+            - id: retrieval
+              path: ~/Projects/skills/retrieval
+            - id: coding
+              path: ~/Projects/skills/coding
+            - id: automation
+              path: ~/Projects/skills/automation
+      when: enable_agent_scaffolding | bool
+
+    - name: Create Honcho process template
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/honcho/Procfile"
+        mode: "0600"
+        content: |
+          api: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+          worker: python -m celery -A app.worker worker --loglevel=INFO
+          scheduler: python -m celery -A app.worker beat --loglevel=INFO
+
+    - name: Create GroundhogDay baseline config template
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/groundhogday/config.yml"
+        mode: "0600"
+        content: |
+          checkpoints:
+            enabled: true
+            interval_minutes: 30
+          retention:
+            daily: 14
+            weekly: 8
+            monthly: 6
+
+    - name: Create postgres connection profile template
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/postgres/profiles.yml"
+        mode: "0600"
+        content: |
+          profiles:
+            local_dev:
+              host: localhost
+              port: 5432
+              database: app
+              user_env: PGUSER
+              password_env: PGPASSWORD
+      when: enable_postgres_toolchain | bool
+
+    - name: Create Postgres dev compose template
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.config/postgres/docker-compose.yml"
+        mode: "0600"
+        content: |
+          services:
+            postgres:
+              image: pgvector/pgvector:pg16
+              restart: unless-stopped
+              environment:
+                POSTGRES_DB: app
+                POSTGRES_USER: app
+                POSTGRES_PASSWORD: app
+              ports:
+                - "5432:5432"
+              volumes:
+                - ./data:/var/lib/postgresql/data
+                - ./init:/docker-entrypoint-initdb.d
+      when: enable_postgres_toolchain | bool

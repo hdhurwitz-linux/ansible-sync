@@ -1,0 +1,275 @@
+consolidation_root: "{{ playbook_dir }}/../state/{{ inventory_hostname }}"
+
+# Shared GitHub source-of-truth for ansible-pull/codespaces coordination.
+# Set these once and all configured machines inherit the same pull target.
+ansible_sync_repo_url: "https://github.com/hdhurwitz-linux/ansible-sync.git"
+ansible_sync_repo_branch: "main"
+ansible_sync_checkout_dir: "$HOME/ansible-sync-pull"
+ansible_sync_inventory_file: "inventory"
+ansible_sync_playbook_file: "playbooks/full_sync.yml"
+
+# Auto-generated tailnet inventory for coordinating all Linux nodes.
+tailnet_inventory_file: "{{ playbook_dir }}/../inventory/10-tailnet.generated.yml"
+
+user_home: "{{ ansible_facts.env.HOME }}"
+managed_bin_paths:
+  - "{{ user_home }}/.local/bin"
+  - "{{ user_home }}/.npm-global/bin"
+  - "{{ user_home }}/bin"
+  - "{{ user_home }}/.local/share/flatpak/exports/bin"
+  - /var/lib/flatpak/exports/bin
+  - /snap/bin
+  - /usr/local/bin
+  - /usr/bin
+  - /usr/local/sbin
+  - /usr/sbin
+path_profile_dir: "{{ user_home }}/.config/profile.d"
+path_profile_file: "{{ path_profile_dir }}/10-managed-path.sh"
+
+enable_postgres_toolchain: true
+enable_agent_scaffolding: true
+enable_api_platform_scaffolding: true
+
+# Optional packages/tools that are useful but may not exist on every Fedora mirror/repo.
+optional_future_packages:
+  - sops
+  - age-plugin-yubikey
+
+# Expected secret keys for multi-provider AI/API workflows.
+# Values come from vault/merge playbooks; this list is used for docs/templates/validation only.
+expected_ai_secret_keys:
+  - OPENAI_API_KEY
+  - OPENAI_ORG_ID
+  - ANTHROPIC_API_KEY
+  - CLAUDE_CODE_OAUTH_TOKEN
+  - PERPLEXITY_API_KEY
+  - OPENROUTER_API_KEY
+  - GOOGLE_API_KEY
+  - GEMINI_API_KEY
+  - MISTRAL_API_KEY
+  - GROQ_API_KEY
+  - TOGETHER_API_KEY
+  - COHERE_API_KEY
+  - XAI_API_KEY
+  - DEEPSEEK_API_KEY
+  - FIREWORKS_API_KEY
+  - REPLICATE_API_TOKEN
+  - HUGGINGFACEHUB_API_TOKEN
+  - TAVILY_API_KEY
+  - SERPAPI_API_KEY
+  - BRAVE_SEARCH_API_KEY
+  - EXA_API_KEY
+  - GITHUB_TOKEN
+  - GITLAB_TOKEN
+  - MCP_GITHUB_TOKEN
+  - MCP_ATLASSIAN_TOKEN
+  - MCP_NOTION_TOKEN
+  - MCP_SLACK_TOKEN
+  - MCP_LINEAR_TOKEN
+  - DATABASE_URL
+  - PGHOST
+  - PGPORT
+  - PGDATABASE
+  - PGUSER
+  - PGPASSWORD
+  - TAILSCALE_API_KEY
+  - MATRIX_ELEMENT_KEYS_B64
+  - MATRIX_KEYS_SOURCE_FILE
+
+# Tailscale ACL policy scaffolding (GitHub-managed source of truth)
+# Update son_user_email when available, then paste generated policy into Tailscale admin ACL page.
+tailscale_acl:
+  tailnet_name: "example-tailnet"
+  owner_user_email: "hdh@example.com"
+  son_user_email: "son@example.com"
+  owner_unix_user: "HDH"
+  son_unix_user: "son"
+  tags:
+    owner_devices: "tag:owner-devices"
+    son_devices: "tag:son-devices"
+    shared_services: "tag:shared-services"
+
+# Media role enforcement: only this host should run server daemons.
+media_server_hostname: "Coordinator"
+media_server_services:
+  - plexmediaserver
+  - calibre-server
+  - roonserver
+
+# Shared user policy
+shared_admin_users:
+  - liam
+
+# Per-user provisioning skips (does NOT affect network/service access).
+# This only prevents account-management tasks on hosts where we should not or cannot
+# administer local users (e.g., locked-down work machines).
+shared_user_provision_skip_hosts:
+  liam:
+    - work-win-1
+    - work-win-2
+
+# QNAP NAS integration (safe even when NAS is offline).
+nas_provider: qnap
+qnap_nas_ip: "192.168.1.50"
+qnap_share_movies: "Multimedia/Movies"
+qnap_share_books: "Multimedia/Books"
+qnap_share_music: "Multimedia/Music"
+nas_mount_root: "/mnt/nas"
+nas_mount_movies: "{{ nas_mount_root }}/movies"
+nas_mount_books: "{{ nas_mount_root }}/books"
+nas_mount_music: "{{ nas_mount_root }}/music"
+nas_credentials_file: "/etc/samba/credentials/qnap"
+nas_cifs_vers: "3.1.1"
+
+# Cloud storage integration
+cloud_mount_root: "/mnt/cloud"
+cloud_mount_mega: "{{ cloud_mount_root }}/mega"
+cloud_mount_onedrive: "{{ cloud_mount_root }}/onedrive-personal"
+cloud_mount_proton: "{{ cloud_mount_root }}/proton-drive"
+cloud_mount_icloud: "{{ cloud_mount_root }}/icloud-drive"
+cloud_use_native_onedrive: false
+cloud_use_native_mega: true
+cloud_install_mega_gui_sync: true
+cloud_rclone_remotes:
+  - name: mega
+    mountpoint: "{{ cloud_mount_mega }}"
+  - name: onedrive-personal
+    mountpoint: "{{ cloud_mount_onedrive }}"
+  - name: protondrive
+    mountpoint: "{{ cloud_mount_proton }}"
+  - name: iclouddrive
+    mountpoint: "{{ cloud_mount_icloud }}"
+
+# Extra package repositories for app + AI tooling stack
+repo_enable_mega: true
+repo_enable_rpmfusion: true
+repo_enable_tailscale: true
+repo_enable_vscode: true
+repo_enable_docker_ce: false
+
+# If some upstream repos lag Fedora releases, allow per-repo fallback.
+repo_fallback_enabled: true
+repo_fallback_major_version: "43"
+
+# Add COPR repos here as needed; failures are non-fatal so one bad COPR won't break sync.
+extra_copr_repos:
+  - atim/lazygit
+
+# Virtualization stack (KVM/libvirt)
+enable_virtualization_stack: true
+virtualization_host_packages:
+  - qemu-kvm
+  - libvirt
+  - libvirt-daemon-kvm
+  - libvirt-daemon-config-network
+  - virt-install
+  - virt-manager
+  - virt-viewer
+  - edk2-ovmf
+  - swtpm
+  - guestfs-tools
+  - bridge-utils
+
+sync_rsync_opts:
+  - "--compress"
+  - "--exclude=.cache/"
+  - "--exclude=Cache/"
+  - "--exclude=GPUCache/"
+  - "--exclude=logs/"
+  - "--exclude=tmp/"
+
+sync_targets:
+  - id: ai_chat_backups
+    path: "{{ user_home }}/.local/share/ai-chat-backups"
+  - id: keyring
+    path: "{{ user_home }}/.local/share/keyrings"
+  - id: ollama_user
+    path: "{{ user_home }}/.ollama"
+  - id: npm_global
+    path: "{{ user_home }}/.npm-global"
+  - id: password_store
+    path: "{{ user_home }}/.password-store"
+  - id: flatpak_app_data
+    path: "{{ user_home }}/.var/app"
+  - id: user_config
+    path: "{{ user_home }}/.config"
+  - id: vscode_extensions
+    path: "{{ user_home }}/.vscode/extensions"
+  - id: ai_continue
+    path: "{{ user_home }}/.continue"
+  - id: ai_codex
+    path: "{{ user_home }}/.codex"
+  - id: ai_copilot
+    path: "{{ user_home }}/.copilot"
+  - id: ai_claude
+    path: "{{ user_home }}/.claude"
+  - id: ai_cursor
+    path: "{{ user_home }}/.cursor"
+  - id: ai_lmstudio
+    path: "{{ user_home }}/.lmstudio"
+  - id: ai_lmstudio_config
+    path: "{{ user_home }}/.config/LM Studio"
+  - id: ai_claude_code
+    path: "{{ user_home }}/.config/claude"
+  - id: ai_aider
+    path: "{{ user_home }}/.aider"
+  - id: ai_windsurf
+    path: "{{ user_home }}/.codeium"
+  - id: ai_zed
+    path: "{{ user_home }}/.config/zed"
+  - id: ai_openwebui
+    path: "{{ user_home }}/.open-webui"
+  - id: openclaw_home
+    path: "{{ user_home }}/.openclaw"
+  - id: openclaw_config
+    path: "{{ user_home }}/.config/openclaw"
+  - id: openclaw_data
+    path: "{{ user_home }}/.local/share/openclaw"
+  - id: honcho_home
+    path: "{{ user_home }}/.honcho"
+  - id: honcho_config
+    path: "{{ user_home }}/.config/honcho"
+  - id: groundhogday_home
+    path: "{{ user_home }}/.groundhogday"
+  - id: groundhogday_config
+    path: "{{ user_home }}/.config/groundhogday"
+  - id: skills_home
+    path: "{{ user_home }}/.skills"
+  - id: skills_config
+    path: "{{ user_home }}/.config/skills"
+  - id: prompts_config
+    path: "{{ user_home }}/.config/prompts"
+  - id: rclone_config
+    path: "{{ user_home }}/.config/rclone"
+  - id: onedrive_config
+    path: "{{ user_home }}/.config/onedrive"
+  - id: matrix_element_config
+    path: "{{ user_home }}/.config/Element"
+  - id: matrix_element_desktop_data
+    path: "{{ user_home }}/.config/element-desktop"
+  - id: matrix_nheko_config
+    path: "{{ user_home }}/.config/nheko"
+  - id: postgres_config
+    path: "{{ user_home }}/.config/postgres"
+  - id: agent_config
+    path: "{{ user_home }}/.config/agents"
+  - id: mcp_servers
+    path: "{{ user_home }}/.config/mcp"
+  - id: api_profiles
+    path: "{{ user_home }}/.config/api-profiles"
+  - id: containers_config
+    path: "{{ user_home }}/.config/containers"
+  - id: aws_config
+    path: "{{ user_home }}/.aws"
+  - id: kube_config
+    path: "{{ user_home }}/.kube"
+  - id: local_bin
+    path: "{{ user_home }}/.local/bin"
+  - id: mcp_config
+    path: "{{ user_home }}/.config/Code/User/mcp.json"
+  - id: vscode_settings
+    path: "{{ user_home }}/.config/Code/User/settings.json"
+  - id: vscode_keybindings
+    path: "{{ user_home }}/.config/Code/User/keybindings.json"
+  - id: aider_config
+    path: "{{ user_home }}/.aider.conf.yml"

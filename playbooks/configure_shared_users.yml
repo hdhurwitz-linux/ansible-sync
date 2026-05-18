@@ -1,0 +1,97 @@
+- name: Configure shared admin users across eligible Linux machines
+  hosts: all
+  gather_facts: true
+  become: true
+  vars:
+    shared_user_shell: /bin/bash
+
+  tasks:
+    - name: Ensure shared admin users exist
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: present
+        create_home: true
+        shell: "{{ shared_user_shell }}"
+        groups: wheel
+        append: true
+      loop: "{{ shared_admin_users | default([]) }}"
+      when:
+        - ansible_facts.os_family | lower != 'windows'
+        - inventory_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+        - ansible_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+
+    - name: Ensure shared user .ssh directory exists
+      ansible.builtin.file:
+        path: "/home/{{ item }}/.ssh"
+        state: directory
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0700"
+      loop: "{{ shared_admin_users | default([]) }}"
+      when:
+        - ansible_facts.os_family | lower != 'windows'
+        - inventory_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+        - ansible_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+
+    - name: Ensure shared user ai-secrets directory exists
+      ansible.builtin.file:
+        path: "/home/{{ item }}/.config/ai-secrets"
+        state: directory
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0700"
+      loop: "{{ shared_admin_users | default([]) }}"
+      when:
+        - ansible_facts.os_family | lower != 'windows'
+        - inventory_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+        - ansible_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+
+    - name: Ensure shared user keyrings directory exists
+      ansible.builtin.file:
+        path: "/home/{{ item }}/.local/share/keyrings"
+        state: directory
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0700"
+      loop: "{{ shared_admin_users | default([]) }}"
+      when:
+        - ansible_facts.os_family | lower != 'windows'
+        - inventory_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+        - ansible_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+
+    - name: Ensure shared user authorized_keys file exists
+      ansible.builtin.file:
+        path: "/home/{{ item }}/.ssh/authorized_keys"
+        state: touch
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0600"
+      loop: "{{ shared_admin_users | default([]) }}"
+      when:
+        - ansible_facts.os_family | lower != 'windows'
+        - inventory_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+        - ansible_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+
+    - name: Ensure shared user ai-secrets env file exists
+      ansible.builtin.file:
+        path: "/home/{{ item }}/.config/ai-secrets/env"
+        state: touch
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0600"
+      loop: "{{ shared_admin_users | default([]) }}"
+      when:
+        - ansible_facts.os_family | lower != 'windows'
+        - inventory_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+        - ansible_hostname not in (shared_user_provision_skip_hosts | default({})).get(item, [])
+
+    - name: Report skipped shared-user provisioning entries for this host
+      ansible.builtin.debug:
+        msg: >-
+          Skipping provisioning for user {{ item }} on host {{ inventory_hostname }}
+          (policy or unsupported OS).
+      loop: "{{ shared_admin_users | default([]) }}"
+      when:
+        - (ansible_facts.os_family | lower == 'windows')
+          or (inventory_hostname in (shared_user_provision_skip_hosts | default({})).get(item, []))
+          or (ansible_hostname in (shared_user_provision_skip_hosts | default({})).get(item, []))

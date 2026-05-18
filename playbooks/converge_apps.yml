@@ -1,0 +1,146 @@
+- name: Converge app/tooling set from peer baseline
+  hosts: localhost
+  gather_facts: true
+  vars:
+    target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+    target_user_home: "{{ lookup('ansible.builtin.pipe', 'getent passwd ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true)) ~ ' | cut -d: -f6') }}"
+    dnf_packages:
+      - podman
+      - podman-compose
+      - buildah
+      - skopeo
+      - element-desktop
+      - nheko
+      - pipx
+      - ripgrep
+      - uv
+      - python3
+      - python3-pip
+      - python3-virtualenv
+      - nodejs
+      - npm
+    npm_global_prefix: "{{ target_user_home }}/.npm-global"
+    npm_global_packages_seed:
+      - pnpm
+      - openclaw
+      - graphify-ts
+      - groundhog
+    pipx_packages_seed:
+      - honcho
+    combined_inventory_file: "{{ playbook_dir }}/../state/inventory/combined-ai-inventory.json"
+
+  tasks:
+    - name: Check passwordless sudo availability
+      ansible.builtin.command: sudo -n true
+      register: sudo_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set sudo capability fact
+      ansible.builtin.set_fact:
+        has_passwordless_sudo: "{{ sudo_check.rc == 0 }}"
+
+    - name: Ensure required DNF packages are installed
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ dnf_packages }}"
+        state: present
+      when: has_passwordless_sudo | bool
+
+    - name: Note skipped root package installation when sudo is unavailable
+      ansible.builtin.debug:
+        msg: "Skipping DNF installs (no passwordless sudo in unattended session)."
+      when: not (has_passwordless_sudo | bool)
+
+    - name: Check whether combined AI inventory exists
+      ansible.builtin.stat:
+        path: "{{ combined_inventory_file }}"
+      register: combined_inventory_stat
+
+    - name: Load combined AI inventory JSON
+      ansible.builtin.set_fact:
+        combined_ai_inventory: "{{ lookup('ansible.builtin.file', combined_inventory_file) | from_json }}"
+      when: combined_inventory_stat.stat.exists
+
+    - name: Build final npm global package list from seed + peer-discovered inventory
+      ansible.builtin.set_fact:
+        npm_global_packages: >-
+          {{
+            (
+              npm_global_packages_seed
+              + (combined_ai_inventory.npm_globals | default([]))
+            )
+            | unique
+            | list
+          }}
+
+    - name: Ensure npm global prefix exists
+      ansible.builtin.file:
+        path: "{{ npm_global_prefix }}/bin"
+        state: directory
+        mode: "0755"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+
+    - name: Configure npm global prefix for current user
+      ansible.builtin.lineinfile:
+        path: "{{ target_user_home }}/.npmrc"
+        regexp: "^prefix="
+        line: "prefix=${HOME}/.npm-global"
+        create: true
+        mode: "0644"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+
+    - name: Install npm global packages used on peer
+      become: true
+      become_user: "{{ target_user }}"
+      community.general.npm:
+        name: "{{ item }}"
+        global: true
+      environment:
+        NPM_CONFIG_PREFIX: "{{ npm_global_prefix }}"
+      loop: "{{ npm_global_packages }}"
+
+    - name: Ensure pipx packages used on peer are installed
+      become: true
+      become_user: "{{ target_user }}"
+      ansible.builtin.shell: |
+        set -e
+        if pipx list --short 2>/dev/null | awk '{print $1}' | grep -qx '{{ item }}'; then
+          pipx upgrade '{{ item }}' || true
+        else
+          pipx install '{{ item }}'
+        fi
+      args:
+        executable: /bin/bash
+      loop: "{{ pipx_packages_seed }}"
+      changed_when: false
+
+    - name: Ensure local bin directory exists for compatibility wrappers
+      ansible.builtin.file:
+        path: "{{ target_user_home }}/.local/bin"
+        state: directory
+        mode: "0755"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+
+    - name: Install graphify compatibility wrapper when graphify-ts exists
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.local/bin/graphify"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          exec "${HOME}/.npm-global/bin/graphify-ts" "$@"
+
+    - name: Install groundhogday compatibility wrapper to groundhog binary
+      ansible.builtin.copy:
+        dest: "{{ target_user_home }}/.local/bin/groundhogday"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          exec "${HOME}/.npm-global/bin/groundhog" "$@"

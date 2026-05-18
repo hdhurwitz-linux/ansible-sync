@@ -1,0 +1,43 @@
+---
+- name: Provision backup directories (non-Obsidian app data)
+  hosts: all
+  become: false
+
+  vars:
+    backup_dirs:
+      - postgres
+      - nodejs
+      - databases
+      - app-state
+      - app-data
+      - logs
+
+  tasks:
+    - name: Create ~/backups and subdirectories
+      file:
+        path: "{{ ansible_env.HOME }}/backups/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: "{{ backup_dirs }}"
+
+    - name: Create README in ~/backups
+      copy:
+        dest: "{{ ansible_env.HOME }}/backups/README.txt"
+        content: |
+          Non-Obsidian app data backups
+          ==============================
+          postgres/    - PostgreSQL dumps (pg_dump output)
+          nodejs/      - Node.js project snapshots
+          databases/   - SQLite and other database files
+          app-state/   - Application configuration state
+          app-data/    - General app data directories
+          logs/        - Application log archives
+
+          RULE: Never put any of this in the Obsidian vault.
+          Only markdown (.md) files belong in Obsidian.
+        mode: "0644"
+      changed_when: false
+
+    - name: Report
+      debug:
+        msg: "Backup directories provisioned at {{ ansible_env.HOME }}/backups/"

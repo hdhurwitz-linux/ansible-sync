@@ -1,0 +1,46 @@
+---
+- name: Distribute SSH and GPG keys to all managed hosts
+  hosts: all
+  become: false
+  vars:
+    coordinator_ssh_pubkey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ3n9fNOpaBKmcHY5TOscW6HBVMsnnBJYj2ZJTN7u+++ hdh@coordinator"
+    gpg_key_id: "F18D791E71804FF7"
+
+  tasks:
+    - name: Ensure .ssh directory exists
+      file:
+        path: "{{ ansible_env.HOME }}/.ssh"
+        state: directory
+        mode: "0700"
+
+    - name: Add coordinator SSH public key to authorized_keys
+      authorized_key:
+        user: "{{ ansible_user_id }}"
+        state: present
+        key: "{{ coordinator_ssh_pubkey }}"
+
+    - name: Copy GPG public key to remote host
+      copy:
+        src: /tmp/hdh_gpg_pub.asc
+        dest: "{{ ansible_env.HOME }}/.gnupg/hdh_pub.asc"
+        mode: "0644"
+      register: gpg_key_copied
+
+    - name: Import GPG public key on remote host
+      command: gpg --import "{{ ansible_env.HOME }}/.gnupg/hdh_pub.asc"
+      when: gpg_key_copied.changed
+      changed_when: true
+
+    - name: Configure git to use GPG signing
+      git_config:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        scope: global
+      loop:
+        - { name: "user.signingkey", value: "{{ gpg_key_id }}" }
+        - { name: "commit.gpgsign", value: "true" }
+        - { name: "gpg.program", value: "gpg2" }
+
+    - name: Report
+      debug:
+        msg: "SSH + GPG keys configured on {{ inventory_hostname }}"

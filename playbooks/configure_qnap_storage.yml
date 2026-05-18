@@ -1,0 +1,81 @@
+- name: Configure QNAP NAS automounts and rclone baseline
+  hosts: localhost
+  gather_facts: true
+  vars:
+    target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+    target_uid: "{{ lookup('ansible.builtin.pipe', 'id -u ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true))) }}"
+    target_gid: "{{ lookup('ansible.builtin.pipe', 'id -g ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true))) }}"
+
+  tasks:
+    - name: Install NAS and sync packages
+      become: true
+      ansible.builtin.dnf:
+        name:
+          - cifs-utils
+          - nfs-utils
+          - rclone
+        state: present
+
+    - name: Ensure NAS mount points exist
+      become: true
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0775"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+      loop:
+        - "{{ nas_mount_root }}"
+        - "{{ nas_mount_movies }}"
+        - "{{ nas_mount_books }}"
+        - "{{ nas_mount_music }}"
+
+    - name: Ensure Samba credentials directory exists
+      become: true
+      ansible.builtin.file:
+        path: "{{ nas_credentials_file | dirname }}"
+        state: directory
+        mode: "0700"
+
+    - name: Seed NAS credentials file if missing
+      become: true
+      ansible.builtin.copy:
+        dest: "{{ nas_credentials_file }}"
+        mode: "0600"
+        force: false
+        content: |
+          username=CHANGE_ME
+          password=CHANGE_ME
+
+    - name: Ensure /etc/fstab contains QNAP CIFS automount entries
+      become: true
+      ansible.builtin.blockinfile:
+        path: /etc/fstab
+        marker: "# {mark} ANSIBLE MANAGED QNAP NAS"
+        block: |
+          //{{ qnap_nas_ip }}/{{ qnap_share_movies }} {{ nas_mount_movies }} cifs credentials={{ nas_credentials_file }},vers={{ nas_cifs_vers }},uid={{ target_uid }},gid={{ target_gid }},iocharset=utf8,file_mode=0664,dir_mode=0775,_netdev,nofail,noauto,x-systemd.automount,x-systemd.idle-timeout=600 0 0
+          //{{ qnap_nas_ip }}/{{ qnap_share_books }} {{ nas_mount_books }} cifs credentials={{ nas_credentials_file }},vers={{ nas_cifs_vers }},uid={{ target_uid }},gid={{ target_gid }},iocharset=utf8,file_mode=0664,dir_mode=0775,_netdev,nofail,noauto,x-systemd.automount,x-systemd.idle-timeout=600 0 0
+          //{{ qnap_nas_ip }}/{{ qnap_share_music }} {{ nas_mount_music }} cifs credentials={{ nas_credentials_file }},vers={{ nas_cifs_vers }},uid={{ target_uid }},gid={{ target_gid }},iocharset=utf8,file_mode=0664,dir_mode=0775,_netdev,nofail,noauto,x-systemd.automount,x-systemd.idle-timeout=600 0 0
+
+    - name: Reload systemd for fstab-generated automounts
+      become: true
+      ansible.builtin.command: systemctl daemon-reload
+      changed_when: false
+
+    - name: Ensure rclone config directory exists for user
+      ansible.builtin.file:
+        path: "{{ ansible_facts.env.HOME }}/.config/rclone"
+        state: directory
+        mode: "0700"
+
+    - name: Seed rclone config placeholder if missing
+      ansible.builtin.copy:
+        dest: "{{ ansible_facts.env.HOME }}/.config/rclone/rclone.conf"
+        mode: "0600"
+        force: false
+        content: |
+          # Add remotes when ready, e.g.
+          # [qnap]
+          # type = sftp
+          # host = 192.168.1.50
+          # user = youruser

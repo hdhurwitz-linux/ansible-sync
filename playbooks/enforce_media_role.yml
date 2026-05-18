@@ -1,0 +1,35 @@
+- name: Enforce media server/client role per host
+  hosts: localhost
+  gather_facts: true
+  vars:
+    is_media_server_host: >-
+      {{
+        (ansible_hostname | lower) == (media_server_hostname | lower)
+        or (inventory_hostname | lower) == (media_server_hostname | lower)
+      }}
+
+  tasks:
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Ensure media services are enabled/running on designated media host
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        masked: false
+      loop: "{{ media_server_services | default([]) }}"
+      when:
+        - is_media_server_host | bool
+        - (item + '.service') in ansible_facts.services
+
+    - name: Ensure media services are stopped/disabled on non-media hosts
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+        masked: true
+      loop: "{{ media_server_services | default([]) }}"
+      when:
+        - not (is_media_server_host | bool)
+        - (item + '.service') in ansible_facts.services

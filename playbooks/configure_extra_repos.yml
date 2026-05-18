@@ -1,0 +1,124 @@
+- name: Configure extra repos (MEGA/COPR/upstream) for AI and tooling stack
+  hosts: localhost
+  gather_facts: true
+
+  tasks:
+    - name: Set default MEGA repo major version
+      ansible.builtin.set_fact:
+        mega_repo_major_version: "{{ ansible_facts.distribution_major_version }}"
+      when: repo_enable_mega | bool
+
+    - name: Probe MEGA repo metadata for current Fedora major
+      ansible.builtin.uri:
+        url: "https://mega.nz/linux/repo/Fedora_{{ ansible_facts.distribution_major_version }}/repodata/repomd.xml"
+        method: GET
+        return_content: false
+        status_code: [200]
+      register: mega_repo_probe
+      failed_when: false
+      changed_when: false
+      when: repo_enable_mega | bool
+
+    - name: Fallback MEGA repo major version when current Fedora repo is unavailable
+      ansible.builtin.set_fact:
+        mega_repo_major_version: "{{ repo_fallback_major_version | default('43') }}"
+      when:
+        - repo_enable_mega | bool
+        - repo_fallback_enabled | default(true) | bool
+        - (mega_repo_probe.status | default(0)) != 200
+
+    - name: Ensure DNF plugins are installed
+      become: true
+      ansible.builtin.dnf:
+        name:
+          - dnf-plugins-core
+        state: present
+
+    - name: Enable RPM Fusion free/nonfree repos
+      become: true
+      ansible.builtin.dnf:
+        name:
+          - "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-{{ ansible_facts.distribution_major_version }}.noarch.rpm"
+          - "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-{{ ansible_facts.distribution_major_version }}.noarch.rpm"
+        state: present
+        disable_gpg_check: false
+      when: repo_enable_rpmfusion | bool
+
+    - name: Configure official MEGA Linux repo
+      become: true
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/mega.repo
+        mode: "0644"
+        content: |
+          [mega]
+          name=MEGA Linux Repository (Fedora {{ mega_repo_major_version }})
+          baseurl=https://mega.nz/linux/repo/Fedora_{{ mega_repo_major_version }}/
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://mega.nz/linux/repo/Fedora_{{ mega_repo_major_version }}/repodata/repomd.xml.key
+      when: repo_enable_mega | bool
+
+    - name: Configure Tailscale repo
+      become: true
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/tailscale.repo
+        mode: "0644"
+        content: |
+          [tailscale-stable]
+          name=Tailscale stable
+          baseurl=https://pkgs.tailscale.com/stable/fedora/$basearch
+          enabled=1
+          type=rpm
+          repo_gpgcheck=1
+          gpgcheck=0
+          gpgkey=https://pkgs.tailscale.com/stable/fedora/repo.gpg
+      when: repo_enable_tailscale | bool
+
+    - name: Configure VS Code repo
+      become: true
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/vscode.repo
+        mode: "0644"
+        content: |
+          [code]
+          name=Visual Studio Code
+          baseurl=https://packages.microsoft.com/yumrepos/vscode
+          enabled=1
+          gpgcheck=1
+          repo_gpgcheck=1
+          gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+      when: repo_enable_vscode | bool
+
+    - name: Configure Docker CE repo
+      become: true
+      ansible.builtin.command: dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+      changed_when: false
+      failed_when: false
+      when: repo_enable_docker_ce | bool
+
+    - name: Remove Docker CE repo file when Docker repo is disabled
+      become: true
+      ansible.builtin.file:
+        path: /etc/yum.repos.d/docker-ce.repo
+        state: absent
+      when: not (repo_enable_docker_ce | bool)
+
+    - name: Enable configured COPR repositories
+      become: true
+      ansible.builtin.command: "dnf -y copr enable {{ item }}"
+      loop: "{{ extra_copr_repos | default([]) }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Keep debug/source/testing repos disabled by default
+      become: true
+      ansible.builtin.command: >-
+        dnf config-manager --set-disabled
+        '*debuginfo*' '*source*' '*-testing*'
+      changed_when: false
+      failed_when: false
+
+    - name: Refresh package metadata cache
+      become: true
+      ansible.builtin.dnf:
+        update_cache: true
