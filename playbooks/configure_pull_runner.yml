@@ -1,5 +1,5 @@
 - name: Configure systemd ansible-pull runner (GitHub source of truth)
-  hosts: localhost
+  hosts: linux_machines
   gather_facts: true
   vars:
     target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
