@@ -164,7 +164,7 @@
 
       [Timer]
       OnBootSec=2min
-      OnUnitActiveSec=6h
+      OnUnitActiveSec=5min
       Persistent=true
       Unit=ansible-parity-sync.service
 

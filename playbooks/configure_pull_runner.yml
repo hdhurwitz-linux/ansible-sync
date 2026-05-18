@@ -3,6 +3,7 @@
   gather_facts: true
   vars:
     target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+    target_uid: "{{ ansible_facts.user_uid }}"
     target_user_home: "{{ lookup('ansible.builtin.pipe', 'getent passwd ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true)) ~ ' | cut -d: -f6') }}"
     rendered_pull_env: |
       # GitHub source-of-truth for all machines
@@ -19,6 +20,23 @@
       # Optional vault password file path for encrypted secrets
       ANSIBLE_SYNC_VAULT_PASS_FILE="$HOME/.config/ansible-sync/vault-pass.txt"
   tasks:
+    - name: Skip non-Linux hosts
+      ansible.builtin.meta: end_host
+      when: ansible_facts.system != 'Linux'
+
+    - name: Ensure tailscale package is installed
+      ansible.builtin.package:
+        name: tailscale
+        state: present
+      become: true
+
+    - name: Ensure tailscaled is enabled and running
+      ansible.builtin.systemd:
+        name: tailscaled
+        enabled: true
+        state: started
+      become: true
+
     - name: Ensure pull runner config directory exists
       ansible.builtin.file:
         path: "{{ target_user_home }}/.config/ansible-sync"
@@ -104,11 +122,20 @@
     - name: Reload user systemd daemon
       become: true
       become_user: "{{ target_user }}"
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ target_uid }}"
       ansible.builtin.command: systemctl --user daemon-reload
+      changed_when: false
+
+    - name: Ensure linger is enabled so user timer starts at boot
+      become: true
+      ansible.builtin.command: "loginctl enable-linger {{ target_user }}"
       changed_when: false
 
     - name: Enable and start pull timer
       become: true
       become_user: "{{ target_user }}"
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ target_uid }}"
       ansible.builtin.command: systemctl --user enable --now ansible-sync-pull.timer
       changed_when: false

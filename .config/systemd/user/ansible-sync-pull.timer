@@ -3,7 +3,7 @@ Description=Periodically pull GitHub ansible-sync repo and converge workstation
 
 [Timer]
 OnBootSec=5m
-OnUnitActiveSec=15m
+OnUnitActiveSec=5m
 RandomizedDelaySec=120
 Persistent=true
 Unit=ansible-sync-pull.service
