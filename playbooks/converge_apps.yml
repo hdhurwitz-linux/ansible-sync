@@ -9,7 +9,6 @@
       - podman-compose
       - buildah
       - skopeo
-      - element-desktop
       - nheko
       - pipx
       - ripgrep
@@ -40,18 +39,6 @@
       ansible.builtin.set_fact:
         has_passwordless_sudo: "{{ sudo_check.rc == 0 }}"
 
-    - name: Ensure required DNF packages are installed
-      become: true
-      ansible.builtin.dnf:
-        name: "{{ dnf_packages }}"
-        state: present
-      when: has_passwordless_sudo | bool
-
-    - name: Note skipped root package installation when sudo is unavailable
-      ansible.builtin.debug:
-        msg: "Skipping DNF installs (no passwordless sudo in unattended session)."
-      when: not (has_passwordless_sudo | bool)
-
     - name: Check whether combined AI inventory exists
       ansible.builtin.stat:
         path: "{{ combined_inventory_file }}"
@@ -73,6 +60,52 @@
             | unique
             | list
           }}
+
+    - name: Build final DNF package list from seed + peer-discovered inventory
+      ansible.builtin.set_fact:
+        final_dnf_packages: >-
+          {{
+            (
+              dnf_packages
+              + (combined_ai_inventory.packages_rpm | default([]))
+            )
+            | reject('match', '^docker')
+            | unique
+            | list
+          }}
+
+    - name: Build final Flatpak app list from peer-discovered inventory
+      ansible.builtin.set_fact:
+        final_flatpak_apps: >-
+          {{
+            (combined_ai_inventory.apps_flatpak | default([]))
+            | reject('equalto', '')
+            | unique
+            | list
+          }}
+
+    - name: Install discovered DNF packages available on this host
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ final_dnf_packages }}"
+      register: dnf_install_results
+      failed_when: false
+      when: has_passwordless_sudo | bool
+
+    - name: Note skipped root package installation when sudo is unavailable
+      ansible.builtin.debug:
+        msg: "Skipping DNF installs (no passwordless sudo in unattended session)."
+      when: not (has_passwordless_sudo | bool)
+
+    - name: Report unavailable DNF packages
+      ansible.builtin.debug:
+        msg: "Unavailable DNF package skipped: {{ item.item }}"
+      loop: "{{ dnf_install_results.results | default([]) }}"
+      when:
+        - has_passwordless_sudo | bool
+        - (item.failed | default(false))
 
     - name: Ensure npm global prefix exists
       ansible.builtin.file:
@@ -101,6 +134,25 @@
       environment:
         NPM_CONFIG_PREFIX: "{{ npm_global_prefix }}"
       loop: "{{ npm_global_packages }}"
+
+    - name: Install peer-discovered Flatpak apps when missing
+      become: true
+      become_user: "{{ target_user }}"
+      ansible.builtin.shell: |
+        set -e
+        flatpak info "{{ item }}" >/dev/null 2>&1 || flatpak install --user -y "{{ item }}" || flatpak install --user -y flathub "{{ item }}"
+      args:
+        executable: /bin/bash
+      loop: "{{ final_flatpak_apps }}"
+      register: flatpak_install_results
+      failed_when: false
+      changed_when: false
+
+    - name: Report unavailable Flatpak apps
+      ansible.builtin.debug:
+        msg: "Unavailable Flatpak app skipped: {{ item.item }}"
+      loop: "{{ flatpak_install_results.results | default([]) }}"
+      when: item.rc | default(0) != 0
 
     - name: Ensure pipx packages used on peer are installed
       become: true

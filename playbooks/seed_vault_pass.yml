@@ -1,0 +1,36 @@
+---
+- name: Seed canonical vault password file on Linux hosts
+  hosts: linux_machines
+  gather_facts: true
+  any_errors_fatal: false
+
+  vars:
+    target_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true) }}"
+    target_user_home: "{{ lookup('ansible.builtin.pipe', 'getent passwd ' ~ (ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER, true)) ~ ' | cut -d: -f6') }}"
+
+  tasks:
+    - name: Ensure vault config directory exists
+      ansible.builtin.file:
+        path: "{{ target_user_home }}/.config/ansible-sync"
+        state: directory
+        mode: "0700"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+
+    - name: Copy canonical vault password file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../.vault_pass"
+        dest: "{{ target_user_home }}/.config/ansible-sync/vault-pass.txt"
+        mode: "0600"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+      no_log: true
+
+    - name: Ensure legacy vault path points to canonical file
+      ansible.builtin.file:
+        src: "{{ target_user_home }}/.config/ansible-sync/vault-pass.txt"
+        dest: "{{ target_user_home }}/.ansible_vault_pass"
+        state: link
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        force: true

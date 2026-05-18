@@ -55,7 +55,7 @@
     - name: Collect local AI inventory
       ansible.builtin.shell: |
         set -e
-        rpm -qa | grep -Ei 'ollama|openclaw|open-webui|honcho|groundhogday|python3-pip|python3-virtualenv|nodejs|npm|pnpm|uv|pipx|code|docker|podman|postgresql' | sort -u | sed 's/^/RPM:/' || true
+        rpm -qa --qf '%{NAME}\n' | grep -Ei 'ollama|openclaw|open-webui|honcho|groundhogday|python3-pip|python3-virtualenv|nodejs|npm|pnpm|uv|pipx|code|docker|podman|postgresql' | sort -u | sed 's/^/RPM:/' || true
         flatpak list --app --columns=application 2>/dev/null | sort -u | sed 's/^/FLATPAK:/' || true
         npm ls -g --depth=0 --parseable 2>/dev/null | tail -n +2 | awk -F/ '{print $NF}' | sort -u | sed 's/^/NPMG:/' || true
         for b in {{ ai_bin_candidates | join(' ') }}; do
@@ -76,7 +76,7 @@
       ansible.builtin.shell: |
         set -e
         tailscale ssh {{ tailscale_ssh_user }}@{{ item }} '
-          rpm -qa | grep -Ei "ollama|openclaw|open-webui|honcho|groundhogday|python3-pip|python3-virtualenv|nodejs|npm|pnpm|uv|pipx|code|docker|podman|postgresql" | sort -u | sed "s/^/RPM:/" || true
+          rpm -qa --qf "%{NAME}\\n" | grep -Ei "ollama|openclaw|open-webui|honcho|groundhogday|python3-pip|python3-virtualenv|nodejs|npm|pnpm|uv|pipx|code|docker|podman|postgresql" | sort -u | sed "s/^/RPM:/" || true
           flatpak list --app --columns=application 2>/dev/null | sort -u | sed "s/^/FLATPAK:/" || true
           npm ls -g --depth=0 --parseable 2>/dev/null | tail -n +2 | awk -F/ "{print \$NF}" | sort -u | sed "s/^/NPMG:/" || true
           for b in {{ ai_bin_candidates | join(' ') }}; do command -v "$b" >/dev/null 2>&1 && echo "BIN:$b"; done
