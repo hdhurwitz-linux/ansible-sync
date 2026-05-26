@@ -67,14 +67,17 @@
     - packages
     - system
 
-- name: Install parity union packages discovered from all hosts
-  dnf:
-    name: "{{ parity_union_packages }}"
-    state: present
-  become: true
-  when:
-    - parity_union_packages is defined
-    - (parity_union_packages | length) > 0
-  tags:
-    - packages
-    - parity
+# Disabled: do not install the auto-generated full package union.
+# This list includes hardware-specific/system packages and is too broad for laptop sync.
+# Use a separate intentional app list instead.
+# - name: Install parity union packages discovered from all hosts
+#   dnf:
+#     name: "{{ parity_union_packages }}"
+#     state: present
+#   become: true
+#   when:
+#     - parity_union_packages is defined
+#     - (parity_union_packages | length) > 0
+#   tags:
+#     - packages
+#     - parity
