@@ -1,0 +1,4 @@
+---
+# Workstation — MSI laptop
+is_coordinator: false
+is_workstation: true

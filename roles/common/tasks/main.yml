@@ -1,22 +1,23 @@
 ---
-- name: Update package cache
-  dnf:
+- name: Update package cache (dnf5)
+  dnf5:
     update_cache: true
     state: present
   become: true
   tags:
     - packages
 
-- name: Install essential CLI tools
-  dnf:
+- name: Install essential CLI tools (dnf5)
+  dnf5:
     name:
       - curl
       - wget
       - git
       - git-lfs
       - htop
+      - btop
       - tmux
-      - vim
+      - vim-minimal
       - nano
       - zip
       - unzip
@@ -29,16 +30,33 @@
       - bat
       - ripgrep
       - fd-find
-      - gnome-tweaks
-      - gnome-shell-extension-caffeine
+      - fzf
+      - tealdeer
+      - procs
+      - duf
+      - ncdu
+      - hexyl
+      - hyperfine
+      - just
     state: present
   become: true
   tags:
     - packages
     - cli-tools
 
-- name: Install network utilities
-  dnf:
+- name: Install shell and code quality tools (dnf5)
+  dnf5:
+    name:
+      - ShellCheck
+      - shfmt
+    state: present
+  become: true
+  tags:
+    - packages
+    - dev-tools
+
+- name: Install network utilities (dnf5)
+  dnf5:
     name:
       - net-tools
       - bind-utils
@@ -46,26 +64,90 @@
       - whois
       - mtr
       - nmap
+      - iperf3
     state: present
   become: true
   tags:
     - packages
     - network
 
-- name: Install system utilities
-  dnf:
+- name: Install system utilities (dnf5)
+  dnf5:
     name:
       - systemd-devel
-      - dnf-utils
       - lsof
       - strace
-      - perf
-      - kernel-tools
+      - httpie
     state: present
   become: true
   tags:
     - packages
     - system
+
+# Coordinator-only packages — not pushed to workstations
+- name: Install coordinator-only packages (dnf5)
+  dnf5:
+    name: "{{ coordinator_packages }}"
+    state: present
+  become: true
+  when: is_coordinator | default(false) | bool
+  tags:
+    - packages
+    - coordinator
+
+- name: Deploy dnf5 automatic update config (coordinator only)
+  copy:
+    dest: /etc/dnf/automatic.conf
+    mode: '0644'
+    content: |
+      [commands]
+      upgrade_type = security
+      random_sleep = 0
+      download_updates = yes
+      apply_updates = yes
+      reboot = never
+
+      [emitters]
+      system_name = {{ inventory_hostname }}
+      emit_via = stdio
+
+      [email]
+      email_from = root@{{ inventory_hostname }}
+      email_to = root
+      email_host = localhost
+
+      [command]
+      [command_email]
+      [dnf]
+  become: true
+  when: is_coordinator | default(false) | bool
+  tags:
+    - dnf5
+    - coordinator
+
+- name: Enable dnf5-automatic timer (coordinator only)
+  systemd:
+    name: dnf5-automatic.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: is_coordinator | default(false) | bool
+  failed_when: false
+  tags:
+    - dnf5
+    - coordinator
+
+- name: Disable PackageKit background updates (dnf5 owns updates)
+  systemd:
+    name: packagekit
+    enabled: false
+    state: stopped
+  become: true
+  failed_when: false
+  tags:
+    - dnf5
+    - updates
 
 # Disabled: do not install the auto-generated full package union.
 # This list includes hardware-specific/system packages and is too broad for laptop sync.

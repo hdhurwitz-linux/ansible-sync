@@ -1,0 +1,10 @@
+---
+# Ansible-pull source of truth
+ansible_sync_repo_url: "https://github.com/hdhurwitz-linux/ansible-sync.git"
+ansible_sync_repo_branch: "main"
+ansible_sync_playbook_file: "playbooks/full_sync.yml"
+ansible_sync_inventory_file: "inventory"
+
+# Machine role flags (override per host in host_vars)
+is_coordinator: false
+is_workstation: true

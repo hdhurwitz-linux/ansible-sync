@@ -1,0 +1,17 @@
+---
+# Coordinator (server) role — not a workstation
+is_coordinator: true
+is_workstation: false
+
+# Coordinator-only packages installed via dnf5
+coordinator_packages:
+  - cockpit-podman
+  - cockpit-machines
+  - cockpit-sosreport
+  - podman-tui
+  - fail2ban
+  - lynis
+  - restic
+  - yt-dlp
+  - hadolint
+  - dnf5-plugin-automatic
