@@ -1,0 +1,113 @@
+---
+# ============================================================
+# WORKSTATION SYNC MANIFEST
+# ============================================================
+# This file controls what gets replicated to ALL non-server
+# Linux machines (msi-fedora, hp-fedora, and any new ones
+# you add to the [workstations] group in inventory/hosts.yml).
+#
+# HOW TO ADD A NEW APP OR TOOL:
+#   1. Install and configure it on any workstation
+#   2. Add the package name to workstation_packages below
+#   3. If it needs config files, add a task in:
+#      roles/workstation_sync/tasks/main.yml
+#   4. Commit and push to GitHub — all workstations pull
+#      within 30 minutes automatically
+#
+# HOW TO ADD A NEW MACHINE:
+#   1. Add host to inventory/hosts.yml under both
+#      linux_machines and workstations groups
+#   2. Ensure SSH key is authorized on that machine
+#   3. It will self-configure on next ansible-pull run
+#
+# HOW TO SYNC FLATPAK APPS:
+#   Add app IDs to workstation_flatpaks below
+#
+# HOW TO SYNC PODMAN CONTAINERS:
+#   Add compose file paths to workstation_compose_dirs below
+#   (must exist on all machines or be created by a task)
+# ============================================================
+
+# DNF packages installed on all workstations
+workstation_packages:
+  # Core CLI tools
+  - git
+  - git-lfs
+  - gh
+  - tmux
+  - vim-minimal
+  - nano
+  - ripgrep
+  - fd-find
+  - bat
+  - fzf
+  - tree
+  - jq
+  - yq
+  - curl
+  - wget2-wget
+  - rsync
+  - htop
+  - btop
+  - ncdu
+  - duf
+  - procs
+  - lsof
+  - strace
+  - mtr
+  - net-tools
+  - nmap
+  - iperf3
+  - tealdeer
+  - hexyl
+  - hyperfine
+  - httpie
+  - just
+  - ShellCheck
+  - shfmt
+  - direnv
+  - age
+  # Container tooling (podman, no docker)
+  - podman
+  - podman-compose
+  - buildah
+  - skopeo
+  # Languages / runtimes
+  - golang
+  - rust
+  - cargo
+  - nodejs22
+  - nodejs22-npm
+  - python3.12
+  - python3-pip
+  - pipx
+  # Security / secrets
+  - gnupg2
+  - openssh-clients
+  # Workstation GUI + management
+  - gnome-tweaks
+  - gnome-connections
+  - cockpit
+  - cockpit-networkmanager
+  - cockpit-selinux
+  # Updates
+  - dnf5-plugin-automatic
+
+# Flatpak apps installed on all workstations
+workstation_flatpaks:
+  - net.cozic.joplin_desktop
+  - im.riot.Riot
+  - me.proton.Pass
+  - com.mattjakeman.ExtensionManager
+
+# GNOME Software background polling disabled (dnf5 owns updates)
+workstation_gsettings:
+  - schema: org.gnome.software
+    key: download-updates
+    value: "false"
+  - schema: org.gnome.software
+    key: allow-updates
+    value: "false"
+
+# dnf5-automatic config for workstations (security updates only)
+workstation_dnf_auto_upgrade_type: security

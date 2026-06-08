@@ -1,0 +1,71 @@
+---
+- name: Install workstation packages (dnf5)
+  dnf5:
+    name: "{{ workstation_packages }}"
+    state: present
+  become: true
+  tags: [packages, workstation]
+
+- name: Install workstation flatpaks
+  community.general.flatpak:
+    name: "{{ item }}"
+    state: present
+    method: system
+  loop: "{{ workstation_flatpaks }}"
+  become: true
+  failed_when: false
+  tags: [flatpak, workstation]
+
+- name: Deploy dnf5 automatic update config
+  copy:
+    dest: /etc/dnf/automatic.conf
+    mode: '0644'
+    content: |
+      [commands]
+      upgrade_type = {{ workstation_dnf_auto_upgrade_type | default('security') }}
+      random_sleep = 0
+      download_updates = yes
+      apply_updates = yes
+      reboot = never
+
+      [emitters]
+      system_name = {{ inventory_hostname }}
+      emit_via = stdio
+
+      [email]
+      email_from = root@{{ inventory_hostname }}
+      email_to = root
+      email_host = localhost
+
+      [command]
+      [command_email]
+      [dnf]
+  become: true
+  tags: [dnf5, workstation]
+
+- name: Enable dnf5-automatic timer
+  systemd:
+    name: dnf5-automatic.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  failed_when: false
+  tags: [dnf5, workstation]
+
+- name: Disable PackageKit background updates
+  systemd:
+    name: packagekit
+    enabled: false
+    state: stopped
+  become: true
+  failed_when: false
+  tags: [dnf5, workstation]
+
+- name: Apply workstation gsettings
+  become: true
+  become_user: "{{ ansible_user_id }}"
+  command: gsettings set {{ item.schema }} {{ item.key }} {{ item.value }}
+  loop: "{{ workstation_gsettings | default([]) }}"
+  failed_when: false
+  tags: [gsettings, workstation]

@@ -1,0 +1,11 @@
+---
+# Sync all workstations (non-server Linux machines).
+# Run manually:  ansible-playbook -i inventory playbooks/sync_workstations.yml
+# Runs automatically via ansible-pull timer every 30min on each machine.
+- name: Sync workstation apps and config
+  hosts: workstations
+  gather_facts: true
+  roles:
+    - role: common
+    - role: system
+    - role: workstation_sync
